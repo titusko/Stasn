@@ -1,0 +1,284 @@
+# Web3 Task Platform - Full Architecture
+
+## Project Dependencies
+
+### Frontend
+- Next.js 14+
+- React 18+
+- Ethers.js (for wallet interactions)
+- wagmi (React hooks for Ethereum)
+- RainbowKit (wallet connection UI)
+- TailwindCSS (styling)
+- NextAuth.js (authentication)
+- React Query (data fetching)
+- Framer Motion (animations)
+
+### Backend
+- Node.js
+- Express.js
+- Prisma (ORM)
+- PostgreSQL (database)
+- Redis (caching)
+- JWT (authentication)
+- Web3.js/Ethers.js (blockchain interaction)
+
+### Smart Contracts
+- Solidity
+- Hardhat (development environment)
+- OpenZeppelin (contract libraries)
+- Chainlink (oracles for external data)
+
+### DevOps
+- Docker
+- GitHub Actions (CI/CD)
+- AWS/Vercel (hosting)
+
+### Integration SDKs
+- Google API Client Library (Gmail)
+- The Graph (blockchain data indexing)
+- IPFS/Filecoin (decentralized storage)
+
+## Project Structure
+
+```
+web3-task-platform/
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── common/
+│   │   │   ├── layout/
+│   │   │   ├── tasks/
+│   │   │   ├── wallet/
+│   │   │   └── gmail/
+│   │   ├── contexts/
+│   │   │   ├── WalletContext.tsx
+│   │   │   ├── TaskContext.tsx
+│   │   │   └── AuthContext.tsx
+│   │   ├── hooks/
+│   │   │   ├── useWallet.ts
+│   │   │   ├── useTasks.ts
+│   │   │   └── useGmail.ts
+│   │   ├── pages/
+│   │   │   ├── api/
+│   │   │   ├── dashboard.tsx
+│   │   │   ├── tasks/
+│   │   │   ├── profile.tsx
+│   │   │   └── auth/
+│   │   ├── services/
+│   │   │   ├── api.ts
+│   │   │   ├── wallet.service.ts
+│   │   │   ├── gmail.service.ts
+│   │   │   └── task.service.ts
+│   │   ├── styles/
+│   │   └── utils/
+│   ├── next.config.js
+│   ├── package.json
+│   └── tailwind.config.js
+├── backend/
+│   ├── src/
+│   │   ├── config/
+│   │   ├── controllers/
+│   │   │   ├── auth.controller.ts
+│   │   │   ├── task.controller.ts
+│   │   │   ├── wallet.controller.ts
+│   │   │   └── gmail.controller.ts
+│   │   ├── middleware/
+│   │   │   ├── auth.middleware.ts
+│   │   │   └── validation.middleware.ts
+│   │   ├── models/
+│   │   │   ├── user.model.ts
+│   │   │   ├── task.model.ts
+│   │   │   └── wallet.model.ts
+│   │   ├── routes/
+│   │   │   ├── auth.routes.ts
+│   │   │   ├── task.routes.ts
+│   │   │   ├── wallet.routes.ts
+│   │   │   └── gmail.routes.ts
+│   │   ├── services/
+│   │   │   ├── blockchain.service.ts
+│   │   │   ├── gmail.service.ts
+│   │   │   └── task.service.ts
+│   │   ├── utils/
+│   │   └── app.ts
+│   ├── package.json
+│   └── tsconfig.json
+├── blockchain/
+│   ├── contracts/
+│   │   ├── TaskManager.sol
+│   │   ├── TaskToken.sol
+│   │   └── TaskVerifier.sol
+│   ├── scripts/
+│   │   ├── deploy.js
+│   │   └── verify.js
+│   ├── test/
+│   ├── hardhat.config.js
+│   └── package.json
+├── docker-compose.yml
+└── README.md
+```
+
+## Core Smart Contracts
+
+### TaskToken.sol
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.17;
+
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+contract TaskToken is ERC20, Ownable {
+    constructor() ERC20("TaskToken", "TASK") {
+        _mint(msg.sender, 1000000 * 10 ** decimals());
+    }
+
+    function mint(address to, uint256 amount) public onlyOwner {
+        _mint(to, amount);
+    }
+}
+```
+
+### TaskManager.sol
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.17;
+
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "./TaskToken.sol";
+
+contract TaskManager is Ownable, ReentrancyGuard {
+    TaskToken public taskToken;
+    
+    struct Task {
+        uint256 id;
+        string title;
+        string description;
+        uint256 reward;
+        address creator;
+        address assignee;
+        bool completed;
+        bool verified;
+        uint256 createdAt;
+        uint256 completedAt;
+    }
+    
+    mapping(uint256 => Task) public tasks;
+    uint256 public taskCount;
+    
+    event TaskCreated(uint256 indexed id, string title, address creator, uint256 reward);
+    event TaskAssigned(uint256 indexed id, address assignee);
+    event TaskCompleted(uint256 indexed id, address assignee);
+    event TaskVerified(uint256 indexed id, address verifier);
+    
+    constructor(address _taskTokenAddress) {
+        taskToken = TaskToken(_taskTokenAddress);
+    }
+    
+    function createTask(string memory _title, string memory _description, uint256 _reward) external {
+        require(_reward > 0, "Reward must be greater than 0");
+        require(taskToken.balanceOf(msg.sender) >= _reward, "Insufficient token balance");
+        
+        taskCount++;
+        tasks[taskCount] = Task({
+            id: taskCount,
+            title: _title,
+            description: _description,
+            reward: _reward,
+            creator: msg.sender,
+            assignee: address(0),
+            completed: false,
+            verified: false,
+            createdAt: block.timestamp,
+            completedAt: 0
+        });
+        
+        // Transfer tokens to this contract as escrow
+        taskToken.transferFrom(msg.sender, address(this), _reward);
+        
+        emit TaskCreated(taskCount, _title, msg.sender, _reward);
+    }
+    
+    function assignTask(uint256 _taskId) external {
+        Task storage task = tasks[_taskId];
+        
+        require(task.id != 0, "Task does not exist");
+        require(task.assignee == address(0), "Task already assigned");
+        require(task.creator != msg.sender, "Cannot assign to self");
+        
+        task.assignee = msg.sender;
+        
+        emit TaskAssigned(_taskId, msg.sender);
+    }
+    
+    function completeTask(uint256 _taskId) external {
+        Task storage task = tasks[_taskId];
+        
+        require(task.id != 0, "Task does not exist");
+        require(task.assignee == msg.sender, "Not assigned to you");
+        require(!task.completed, "Task already completed");
+        
+        task.completed = true;
+        task.completedAt = block.timestamp;
+        
+        emit TaskCompleted(_taskId, msg.sender);
+    }
+    
+    function verifyAndReward(uint256 _taskId) external {
+        Task storage task = tasks[_taskId];
+        
+        require(task.id != 0, "Task does not exist");
+        require(task.creator == msg.sender || owner() == msg.sender, "Not authorized");
+        require(task.completed, "Task not completed");
+        require(!task.verified, "Task already verified");
+        
+        task.verified = true;
+        
+        // Transfer reward tokens to the assignee
+        taskToken.transfer(task.assignee, task.reward);
+        
+        emit TaskVerified(_taskId, msg.sender);
+    }
+}
+```
+
+## Workflow Implementation
+
+### User Authentication Flow
+1. User visits platform
+2. User connects Web3 wallet (Metamask, WalletConnect, etc.)
+3. Backend verifies wallet signature
+4. Optional Gmail integration for notifications
+5. JWT issued for authenticated sessions
+
+### Task Creation Flow
+1. User creates task with title, description, reward amount
+2. Smart contract escrows reward tokens
+3. Task is published to platform
+4. Notifications sent to potential assignees
+
+### Task Assignment Flow
+1. Users browse available tasks
+2. User selects task to work on
+3. Smart contract records assignment
+4. Notification sent to task creator
+
+### Task Completion Flow
+1. Assignee completes task and submits proof
+2. Creator reviews submission
+3. If approved, smart contract releases reward
+4. Reputation scores updated
+
+### Layer 3 Integration
+1. Optimistic execution of tasks
+2. Zero-knowledge proofs for private task verification
+3. State channels for fast microtransactions
+4. Rollups for gas efficiency
+
+### Zealy-like Functionalities
+1. Quest system with tiered rewards
+2. Social engagement tracking
+3. Community leaderboards
+4. Achievement badges (NFTs)
+5. Referral program
