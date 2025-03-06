@@ -1,0 +1,129 @@
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/router';
+import { useAccount } from 'wagmi';
+import Layout from '../components/Layout';
+import TaskList from '../components/TaskList';
+import CreateTaskModal from '../components/CreateTaskModal';
+import { contractService, Task } from '../services/contractService';
+import { useQuery, useQueryClient } from 'react-query';
+import TaskFilterBar from '../components/TaskFilterBar';
+
+type TasksTabType = 'available' | 'created' | 'assigned';
+
+const Dashboard: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<TasksTabType>('available');
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const { address, isConnected } = useAccount();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!isConnected) {
+      router.push('/');
+    }
+  }, [isConnected, router]);
+
+  // Query for fetching tasks based on active tab
+  const { data: tasks = [], isLoading } = useQuery(
+    ['tasks', activeTab, address],
+    async () => {
+      try {
+        const taskCount = await contractService.getTaskCount();
+        let taskIds: number[] = [];
+        
+        if (activeTab === 'available') {
+          // Get all tasks and filter client-side
+          taskIds = Array.from({ length: taskCount }, (_, i) => i + 1);
+        } else if (activeTab === 'created' && address) {
+          taskIds = await contractService.getTasksByCreator(address);
+        } else if (activeTab === 'assigned' && address) {
+          taskIds = await contractService.getTasksByAssignee(address);
+        }
+        
+        // Fetch details for each task
+        const taskPromises = taskIds.map(id => contractService.getTaskById(id));
+        const allTasks = await Promise.all(taskPromises);
+        
+        if (activeTab === 'available') {
+          // Filter out tasks that aren't open or are created by the current user
+          return allTasks.filter(task => 
+            task.status === 'OPEN' && 
+            task.creator.toLowerCase() !== address?.toLowerCase()
+          );
+        }
+        
+        return allTasks;
+      } catch (error) {
+        console.error('Error fetching tasks:', error);
+        return [];
+      }
+    },
+    {
+      enabled: isConnected && !!address,
+      refetchInterval: 30000, // Refetch every 30 seconds
+    }
+  );
+
+  // Filter tasks based on search term and status
+  const filteredTasks = tasks.filter(task => {
+    const matchesSearch = 
+      task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      task.description.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesStatus = 
+      statusFilter === 'all' || 
+      task.status.toLowerCase() === statusFilter.toLowerCase();
+    
+    return matchesSearch && matchesStatus;
+  });
+
+  const handleCreateTask = async () => {
+    setIsCreateModalOpen(false);
+    // Invalidate queries to refresh task lists
+    queryClient.invalidateQueries(['tasks']);
+  };
+
+  const tabClasses = (tab: TasksTabType) => 
+    `px-4 py-2 font-medium ${
+      activeTab === tab
+        ? 'text-blue-600 border-b-2 border-blue-600'
+        : 'text-gray-500 hover:text-gray-700'
+    }`;
+
+  return (
+    <Layout>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold text-gray-900">Task Dashboard</h1>
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+          >
+            Create New Task
+          </button>
+        </div>
+
+        <div className="flex border-b border-gray-200 mb-6">
+          <button
+            className={tabClasses('available')}
+            onClick={() => setActiveTab('available')}
+          >
+            Available Tasks
+          </button>
+          <button
+            className={tabClasses('created')}
+            onClick={() => setActiveTab('created')}
+          >
+            My Created Tasks
+          </button>
+          <button
+            className={tabClasses('assigned')}
+            onClick={() => setActiveTab('assigned')}
+          >
+            My Assigned Tasks
+          </button>
+        </div>
+
+        <TaskFilterBar

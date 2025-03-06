@@ -1,0 +1,158 @@
+import { ethers } from 'ethers';
+import TaskManagerABI from '../contracts/TaskManager.json';
+import TaskTokenABI from '../contracts/TaskToken.json';
+
+export const TASK_MANAGER_ADDRESS = process.env.NEXT_PUBLIC_TASK_MANAGER_ADDRESS as string;
+export const TASK_TOKEN_ADDRESS = process.env.NEXT_PUBLIC_TASK_TOKEN_ADDRESS as string;
+
+export type TaskStatus = 'OPEN' | 'ASSIGNED' | 'SUBMITTED' | 'COMPLETED' | 'CANCELLED' | 'DISPUTED';
+
+export interface Task {
+  id: number;
+  title: string;
+  description: string;
+  ipfsHash: string;
+  reward: string;
+  creator: string;
+  assignee: string;
+  status: TaskStatus;
+  createdAt: number;
+  deadline: number;
+  completedAt: number;
+  proofHash: string;
+}
+
+const statusMap: { [key: number]: TaskStatus } = {
+  0: 'OPEN',
+  1: 'ASSIGNED',
+  2: 'SUBMITTED',
+  3: 'COMPLETED',
+  4: 'CANCELLED',
+  5: 'DISPUTED'
+};
+
+export class ContractService {
+  provider: ethers.providers.Web3Provider | null = null;
+  signer: ethers.Signer | null = null;
+  taskManager: ethers.Contract | null = null;
+  taskToken: ethers.Contract | null = null;
+
+  initialize = async () => {
+    if (typeof window === 'undefined' || !window.ethereum) {
+      throw new Error('Ethereum provider not found');
+    }
+
+    this.provider = new ethers.providers.Web3Provider(window.ethereum);
+    this.signer = this.provider.getSigner();
+    
+    this.taskManager = new ethers.Contract(
+      TASK_MANAGER_ADDRESS,
+      TaskManagerABI.abi,
+      this.signer
+    );
+    
+    this.taskToken = new ethers.Contract(
+      TASK_TOKEN_ADDRESS,
+      TaskTokenABI.abi,
+      this.signer
+    );
+  };
+
+  // Task Token Methods
+  getTokenBalance = async (address: string): Promise<string> => {
+    if (!this.taskToken) await this.initialize();
+    const balance = await this.taskToken!.balanceOf(address);
+    return ethers.utils.formatEther(balance);
+  };
+
+  approveTaskManager = async (amount: string): Promise<ethers.ContractTransaction> => {
+    if (!this.taskToken) await this.initialize();
+    const amountWei = ethers.utils.parseEther(amount);
+    return this.taskToken!.approve(TASK_MANAGER_ADDRESS, amountWei);
+  };
+
+  // Task Manager Methods
+  createTask = async (
+    title: string,
+    description: string,
+    ipfsHash: string,
+    reward: string,
+    deadlineTimestamp: number
+  ): Promise<ethers.ContractTransaction> => {
+    if (!this.taskManager) await this.initialize();
+    const rewardWei = ethers.utils.parseEther(reward);
+    return this.taskManager!.createTask(
+      title,
+      description,
+      ipfsHash,
+      rewardWei,
+      deadlineTimestamp
+    );
+  };
+
+  assignTask = async (taskId: number): Promise<ethers.ContractTransaction> => {
+    if (!this.taskManager) await this.initialize();
+    return this.taskManager!.assignTask(taskId);
+  };
+
+  submitTask = async (taskId: number, proofHash: string): Promise<ethers.ContractTransaction> => {
+    if (!this.taskManager) await this.initialize();
+    return this.taskManager!.submitTask(taskId, proofHash);
+  };
+
+  approveTask = async (taskId: number): Promise<ethers.ContractTransaction> => {
+    if (!this.taskManager) await this.initialize();
+    return this.taskManager!.approveTask(taskId);
+  };
+
+  cancelTask = async (taskId: number): Promise<ethers.ContractTransaction> => {
+    if (!this.taskManager) await this.initialize();
+    return this.taskManager!.cancelTask(taskId);
+  };
+
+  disputeTask = async (taskId: number, reason: string): Promise<ethers.ContractTransaction> => {
+    if (!this.taskManager) await this.initialize();
+    return this.taskManager!.disputeTask(taskId, reason);
+  };
+
+  // View Methods
+  getTaskById = async (taskId: number): Promise<Task> => {
+    if (!this.taskManager) await this.initialize();
+    const taskData = await this.taskManager!.tasks(taskId);
+    
+    return {
+      id: taskData.id.toNumber(),
+      title: taskData.title,
+      description: taskData.description,
+      ipfsHash: taskData.ipfsHash,
+      reward: ethers.utils.formatEther(taskData.reward),
+      creator: taskData.creator,
+      assignee: taskData.assignee,
+      status: statusMap[taskData.status],
+      createdAt: taskData.createdAt.toNumber(),
+      deadline: taskData.deadline.toNumber(),
+      completedAt: taskData.completedAt.toNumber(),
+      proofHash: taskData.proofHash
+    };
+  };
+
+  getTaskCount = async (): Promise<number> => {
+    if (!this.taskManager) await this.initialize();
+    const count = await this.taskManager!.getTaskCount();
+    return count.toNumber();
+  };
+
+  getTasksByCreator = async (address: string): Promise<number[]> => {
+    if (!this.taskManager) await this.initialize();
+    const taskIds = await this.taskManager!.getTasksByCreator(address);
+    return taskIds.map(id => id.toNumber());
+  };
+
+  getTasksByAssignee = async (address: string): Promise<number[]> => {
+    if (!this.taskManager) await this.initialize();
+    const taskIds = await this.taskManager!.getTasksByAssignee(address);
+    return taskIds.map(id => id.toNumber());
+  };
+}
+
+export const contractService = new ContractService();
