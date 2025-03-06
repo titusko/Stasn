@@ -1,0 +1,180 @@
+import React, { useState } from 'react';
+import { ethers } from 'ethers';
+import { Task, contractService } from '../services/contractService';
+import TaskActionButtons from './TaskActionButtons';
+import { formatDistanceToNow } from 'date-fns';
+import TaskSubmitModal from './TaskSubmitModal';
+import TaskDisputeModal from './TaskDisputeModal';
+
+interface TaskCardProps {
+  task: Task;
+  userAddress?: string;
+  mode: 'available' | 'created' | 'assigned';
+  onTaskAction: () => void;
+}
+
+const TaskCard: React.FC<TaskCardProps> = ({ task, userAddress, mode, onTaskAction }) => {
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
+  const [isDisputeModalOpen, setIsDisputeModalOpen] = useState(false);
+
+  const isCreator = userAddress?.toLowerCase() === task.creator.toLowerCase();
+  const isAssignee = userAddress?.toLowerCase() === task.assignee.toLowerCase();
+  const hasDeadlinePassed = task.deadline < Math.floor(Date.now() / 1000);
+
+  const handleAssignTask = async () => {
+    if (!userAddress) return;
+    
+    try {
+      setIsLoading(true);
+      const tx = await contractService.assignTask(task.id);
+      await tx.wait();
+      onTaskAction();
+    } catch (error) {
+      console.error('Error assigning task:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleApproveTask = async () => {
+    if (!isCreator) return;
+    
+    try {
+      setIsLoading(true);
+      const tx = await contractService.approveTask(task.id);
+      await tx.wait();
+      onTaskAction();
+    } catch (error) {
+      console.error('Error approving task:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCancelTask = async () => {
+    if (!isCreator) return;
+    
+    try {
+      setIsLoading(true);
+      const tx = await contractService.cancelTask(task.id);
+      await tx.wait();
+      onTaskAction();
+    } catch (error) {
+      console.error('Error canceling task:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSubmitTask = async (proofHash: string) => {
+    if (!isAssignee) return;
+    
+    try {
+      setIsLoading(true);
+      setIsSubmitModalOpen(false);
+      
+      const tx = await contractService.submitTask(task.id, proofHash);
+      await tx.wait();
+      onTaskAction();
+    } catch (error) {
+      console.error('Error submitting task:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDisputeTask = async (reason: string) => {
+    if (!isCreator && !isAssignee) return;
+    
+    try {
+      setIsLoading(true);
+      setIsDisputeModalOpen(false);
+      
+      const tx = await contractService.disputeTask(task.id, reason);
+      await tx.wait();
+      onTaskAction();
+    } catch (error) {
+      console.error('Error disputing task:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getStatusClass = () => {
+    switch (task.status) {
+      case 'OPEN':
+        return 'bg-green-100 text-green-800';
+      case 'ASSIGNED':
+        return 'bg-blue-100 text-blue-800';
+      case 'SUBMITTED':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'COMPLETED':
+        return 'bg-purple-100 text-purple-800';
+      case 'CANCELLED':
+        return 'bg-gray-100 text-gray-800';
+      case 'DISPUTED':
+        return 'bg-red-100 text-red-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-lg shadow-md overflow-hidden border border-gray-200">
+      <div className="p-4">
+        <div className="flex justify-between items-start mb-2">
+          <h3 className="text-lg font-semibold text-gray-900 truncate">{task.title}</h3>
+          <span className={`px-2 py-1 text-xs rounded-full font-medium ${getStatusClass()}`}>
+            {task.status}
+          </span>
+        </div>
+        
+        <p className="text-gray-600 text-sm mb-4 line-clamp-3">{task.description}</p>
+        
+        <div className="flex justify-between text-sm text-gray-500 mb-4">
+          <span>Created {formatDistanceToNow(task.createdAt * 1000, { addSuffix: true })}</span>
+          {hasDeadlinePassed ? (
+            <span className="text-red-500">Deadline passed</span>
+          ) : (
+            <span>Deadline: {formatDistanceToNow(task.deadline * 1000, { addSuffix: true })}</span>
+          )}
+        </div>
+        
+        <div className="flex justify-between items-center">
+          <div className="font-medium text-blue-600">
+            {ethers.utils.formatEther(ethers.utils.parseEther(task.reward))} TASK
+          </div>
+          
+          <TaskActionButtons
+            task={task}
+            isCreator={isCreator}
+            isAssignee={isAssignee}
+            isLoading={isLoading}
+            onAssign={handleAssignTask}
+            onApprove={handleApproveTask}
+            onCancel={handleCancelTask}
+            onSubmit={() => setIsSubmitModalOpen(true)}
+            onDispute={() => setIsDisputeModalOpen(true)}
+          />
+        </div>
+      </div>
+
+      <TaskSubmitModal
+        isOpen={isSubmitModalOpen}
+        onClose={() => setIsSubmitModalOpen(false)}
+        onSubmit={handleSubmitTask}
+        taskId={task.id}
+      />
+
+      <TaskDisputeModal
+        isOpen={isDisputeModalOpen}
+        onClose={() => setIsDisputeModalOpen(false)}
+        onDispute={handleDisputeTask}
+        taskId={task.id}
+      />
+    </div>
+  );
+};
+
+export default TaskCard;
