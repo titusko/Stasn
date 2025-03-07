@@ -1,43 +1,42 @@
 
 import { useState, useCallback } from 'react';
-import { ethers } from 'ethers';
-import { useWalletContext } from '@/contexts/WalletContext';
+import { ethers, ContractInterface } from 'ethers';
+import { useWalletContext } from '../contexts/WalletContext';
+import { toast } from 'react-hot-toast';
 
-interface ContractWriteOptions {
+interface UseContractWriteProps {
   contract: {
     address: string;
-    abi: any[];
+    abi: ContractInterface;
   };
   method: string;
-  onSuccess?: (receipt: ethers.TransactionReceipt) => void;
-  onError?: (error: Error) => void;
 }
 
-export function useContractWrite({
-  contract,
-  method,
-  onSuccess,
-  onError,
-}: ContractWriteOptions) {
-  const { signer } = useWalletContext();
+interface TransactionResponse {
+  hash: string;
+  wait: () => Promise<ethers.providers.TransactionReceipt>;
+}
+
+export function useContractWrite<T = any>({ contract, method }: UseContractWriteProps) {
+  const { signer, isConnected } = useWalletContext();
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+  const [data, setData] = useState<T | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
-  const [receipt, setReceipt] = useState<ethers.TransactionReceipt | null>(null);
 
   const write = useCallback(
-    async (args: any[] = []) => {
-      if (!signer) {
-        const walletError = new Error('Wallet not connected');
-        setError('Wallet not connected');
-        onError?.(walletError);
-        throw walletError;
+    async (args: any[] = []): Promise<T | null> => {
+      if (!signer || !isConnected) {
+        const error = new Error('Wallet not connected');
+        setError(error);
+        toast.error('Please connect your wallet first');
+        return null;
       }
 
       setIsLoading(true);
       setError(null);
+      setData(null);
       setTxHash(null);
-      setReceipt(null);
 
       try {
         const contractInstance = new ethers.Contract(
@@ -46,38 +45,88 @@ export function useContractWrite({
           signer
         );
 
-        // Execute the contract method
-        const tx = await contractInstance[method](...args);
-        setTxHash(tx.hash);
+        const gasEstimate = await contractInstance.estimateGas[method](...args);
+        const gasLimit = gasEstimate.mul(120).div(100); // Add 20% buffer
 
-        // Wait for transaction confirmation
+        const tx: TransactionResponse = await contractInstance[method](...args, {
+          gasLimit,
+        });
+
+        setTxHash(tx.hash);
+        toast.loading(`Transaction submitted: ${tx.hash.substring(0, 6)}...${tx.hash.substring(tx.hash.length - 4)}`);
+
         const receipt = await tx.wait();
-        setReceipt(receipt);
-        onSuccess?.(receipt);
         
-        return {
-          tx,
-          receipt,
-          taskId: receipt.events?.find(e => e.event === 'TaskSubmitted' || e.event === 'ProofSubmitted')?.args?.taskId
-        };
+        // Try to parse event logs for result data
+        let resultData: any = null;
+        try {
+          const eventSignature = Object.keys(contractInstance.interface.events).find(
+            (event) => event.startsWith(method)
+          );
+          
+          if (eventSignature && receipt.logs.length > 0) {
+            const event = receipt.logs
+              .map((log) => {
+                try {
+                  return contractInstance.interface.parseLog(log);
+                } catch (e) {
+                  return null;
+                }
+              })
+              .find((parsedLog) => parsedLog && parsedLog.name === eventSignature.split('(')[0]);
+            
+            if (event) {
+              resultData = event.args;
+            }
+          }
+        } catch (e) {
+          console.error('Error parsing event logs:', e);
+        }
+
+        setData(resultData as T);
+        toast.success('Transaction successful!');
+        return resultData as T;
       } catch (err: any) {
-        const errorMessage = err.reason || err.message || 'Transaction failed';
-        setError(errorMessage);
-        onError?.(err);
-        throw err;
+        console.error('Contract write error:', err);
+        let errorMessage = 'Transaction failed';
+        
+        // Parse error message from blockchain
+        if (err.reason) {
+          errorMessage = err.reason;
+        } else if (err.data?.message) {
+          errorMessage = err.data.message;
+        } else if (err.message) {
+          // Clean up common ethers error messages
+          errorMessage = err.message.replace(/execution reverted: /i, '');
+          if (errorMessage.includes('user rejected transaction')) {
+            errorMessage = 'Transaction rejected by user';
+          }
+        }
+        
+        const error = new Error(errorMessage);
+        setError(error);
+        toast.error(errorMessage);
+        throw error;
       } finally {
         setIsLoading(false);
       }
     },
-    [contract, method, signer, onSuccess, onError]
+    [contract, method, signer, isConnected]
   );
+
+  const reset = useCallback(() => {
+    setError(null);
+    setData(null);
+    setTxHash(null);
+  }, []);
 
   return {
     write,
     isLoading,
     error,
+    data,
     txHash,
-    receipt,
+    reset,
   };
 }
 

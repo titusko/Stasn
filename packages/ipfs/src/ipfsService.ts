@@ -1,14 +1,23 @@
 
 import axios from 'axios';
+import FormData from 'form-data';
+import { Readable } from 'stream';
 
 export interface IPFSUploadOptions {
   name?: string;
+  keyvalues?: Record<string, string>;
   pinataMetadata?: {
     name?: string;
     keyvalues?: Record<string, string>;
   };
   pinataOptions?: {
     cidVersion?: 0 | 1;
+    customPinPolicy?: {
+      regions: Array<{
+        id: string;
+        desiredReplicationCount: number;
+      }>;
+    };
   };
 }
 
@@ -16,17 +25,16 @@ export interface IPFSUploadResponse {
   IpfsHash: string;
   PinSize: number;
   Timestamp: string;
+  isDuplicate?: boolean;
 }
 
-class IPFSService {
+export class IPFSService {
   private apiUrl: string;
   private jwt: string;
-  private gateway: string;
 
-  constructor(jwt: string, apiUrl = 'https://api.pinata.cloud', gateway = 'https://gateway.pinata.cloud') {
+  constructor(jwt: string, apiUrl = 'https://api.pinata.cloud') {
     this.jwt = jwt;
     this.apiUrl = apiUrl;
-    this.gateway = gateway;
   }
 
   private getAuthHeaders() {
@@ -37,50 +45,34 @@ class IPFSService {
 
   /**
    * Upload a file to IPFS
-   * @param file File object (browser) or path/buffer (Node.js)
+   * @param file File data as buffer or stream
    * @param options Upload options
    * @returns Upload response with IPFS hash
    */
   async uploadFile(
-    file: File | string | Buffer | any,
+    file: Buffer | Readable,
     options: IPFSUploadOptions = {}
   ): Promise<IPFSUploadResponse> {
     try {
       const formData = new FormData();
       
       // Add file to form data
-      if (typeof File !== 'undefined' && file instanceof File) {
-        // Browser File object
-        formData.append('file', file);
-      } else if (typeof file === 'string') {
-        // In browser context, this won't work - but kept for Node.js compatibility
-        throw new Error('String file paths are only supported in Node.js environment');
+      if (Buffer.isBuffer(file)) {
+        // Buffer
+        formData.append('file', file, { filename: options.name || 'file' });
       } else {
-        // Buffer or other
+        // ReadableStream
         formData.append('file', file, { filename: options.name || 'file' });
       }
 
       // Add metadata if provided
       if (options.pinataMetadata) {
         formData.append('pinataMetadata', JSON.stringify(options.pinataMetadata));
-      } else if (file instanceof File) {
-        // Add default metadata for browser File objects
-        const metadata = {
-          name: file.name,
-          keyvalues: {
-            size: file.size.toString(),
-            type: file.type,
-          }
-        };
-        formData.append('pinataMetadata', JSON.stringify(metadata));
       }
 
       // Add options if provided
       if (options.pinataOptions) {
         formData.append('pinataOptions', JSON.stringify(options.pinataOptions));
-      } else {
-        // Default to CIDv1
-        formData.append('pinataOptions', JSON.stringify({ cidVersion: 1 }));
       }
 
       // Make the request to Pinata
@@ -91,7 +83,7 @@ class IPFSService {
           maxBodyLength: Infinity,
           headers: {
             ...this.getAuthHeaders(),
-            'Content-Type': 'multipart/form-data',
+            ...formData.getHeaders()
           }
         }
       );
@@ -120,13 +112,8 @@ class IPFSService {
         `${this.apiUrl}/pinning/pinJSONToIPFS`,
         {
           pinataContent: jsonData,
-          pinataMetadata: options.pinataMetadata || {
-            name: 'JSON Data',
-            keyvalues: {
-              timestamp: Date.now().toString(),
-            }
-          },
-          pinataOptions: options.pinataOptions || { cidVersion: 1 }
+          pinataMetadata: options.pinataMetadata,
+          pinataOptions: options.pinataOptions
         },
         {
           headers: this.getAuthHeaders()
@@ -150,7 +137,7 @@ class IPFSService {
   async getContent(ipfsHash: string): Promise<any> {
     try {
       // Use public IPFS gateway
-      const response = await axios.get(`${this.gateway}/ipfs/${ipfsHash}`);
+      const response = await axios.get(`https://gateway.pinata.cloud/ipfs/${ipfsHash}`);
       return response.data;
     } catch (error) {
       if (axios.isAxiosError(error)) {
