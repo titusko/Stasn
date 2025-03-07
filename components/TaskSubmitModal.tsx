@@ -28,14 +28,28 @@ const TaskSubmitModal: React.FC<TaskSubmitModalProps> = ({ isOpen, onClose, onSu
 
     try {
       setIsUploading(true);
-      // For now, we'll just use a simulated IPFS hash
-      const mockProofHash = await ipfsService.uploadJson({ 
+      
+      let fileHashes: string[] = [];
+      
+      // Upload files if any
+      if (files.length > 0) {
+        // In a real implementation, you would upload each file to IPFS
+        // For now, we'll just log the files
+        console.log('Files to upload:', files);
+        
+        // This would be implemented in ipfsService in a real app
+        // fileHashes = await Promise.all(files.map(file => ipfsService.uploadFile(file)));
+      }
+      
+      // Upload proof data with file references if any
+      const proofHash = await ipfsService.uploadJson({ 
         taskId,
         proof,
+        fileHashes,
         timestamp: Date.now() 
       });
       
-      onSubmit(mockProofHash);
+      onSubmit(proofHash);
       setProof('');
       setFiles([]);
       onClose();

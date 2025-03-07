@@ -34,6 +34,40 @@ export class IPFSService {
       throw error;
     }
   }
+  
+  async uploadFile(file: File): Promise<string> {
+    try {
+      if (!PINATA_JWT) {
+        throw new Error('Pinata JWT not configured');
+      }
+      
+      console.log('Uploading file to IPFS:', file.name);
+      
+      // For demo purposes, return a mock hash
+      return `QmFile${Date.now()}${Math.random().toString(36).substring(2, 15)}`;
+      
+      /* Uncomment for actual implementation
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const response = await axios.post(
+        'https://api.pinata.cloud/pinning/pinFileToIPFS',
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            'Authorization': `Bearer ${PINATA_JWT}`
+          }
+        }
+      );
+      
+      return response.data.IpfsHash;
+      */
+    } catch (error) {
+      console.error('Error uploading file to IPFS:', error);
+      throw error;
+    }
+  }
 
   getIpfsUrl(hash: string): string {
     return `${PINATA_GATEWAY}${hash}`;
