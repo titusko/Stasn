@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { ethers } from 'ethers';
+
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useWallet } from './WalletProvider';
-import { usePublicClient } from 'wagmi';
+import { ethers } from 'ethers';
 
 interface Web3ContextType {
   provider: ethers.BrowserProvider | null;
@@ -10,12 +10,17 @@ interface Web3ContextType {
   error: string | null;
 }
 
-const Web3Context = createContext<Web3ContextType | undefined>(undefined);
+const Web3Context = createContext<Web3ContextType>({
+  provider: null,
+  signer: null,
+  contract: null,
+  error: null
+});
 
-export const Web3Provider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const { isConnected } = useWallet();
-  const publicClient = usePublicClient();
+export const useWeb3 = () => useContext(Web3Context);
 
+export const Web3Provider: React.FC<{children: React.ReactNode}> = ({ children }) => {
+  const { isConnected, address } = useWallet();
   const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
   const [signer, setSigner] = useState<ethers.Signer | null>(null);
   const [contract, setContract] = useState<ethers.Contract | null>(null);
@@ -23,50 +28,43 @@ export const Web3Provider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   useEffect(() => {
     const initializeWeb3 = async () => {
+      if (!isConnected || !window.ethereum) {
+        return;
+      }
+
       try {
-        if (!isConnected || !window.ethereum) {
-          return;
-        }
-
-        const newProvider = new ethers.BrowserProvider(window.ethereum);
-        setProvider(newProvider);
-
-        const newSigner = await newProvider.getSigner();
-        setSigner(newSigner);
-
-        // Initialize contract if you have ABI and address
+        setError(null);
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        setProvider(provider);
+        
+        const signer = await provider.getSigner();
+        setSigner(signer);
+        
         const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
-        if (contractAddress) {
-          try {
-            // You would need to import your ABI here.  Placeholder for now.
-            const contractABI = []; // Replace with your actual ABI
-            const newContract = new ethers.Contract(contractAddress, contractABI, newSigner);
-            setContract(newContract);
-          } catch (contractError) {
-            console.error('Contract initialization error:', contractError);
-            setError('Failed to initialize contract');
-          }
+        if (!contractAddress) {
+          throw new Error('Contract address not configured');
         }
+        
+        // Simple ABI for a token contract
+        const abi = [
+          "function balanceOf(address owner) view returns (uint256)",
+          "function transfer(address to, uint256 amount) returns (bool)"
+        ];
+        
+        const contract = new ethers.Contract(contractAddress, abi, signer);
+        setContract(contract);
       } catch (err) {
-        console.error('Web3 initialization error:', err);
-        setError('Failed to initialize Web3');
+        console.error('Error initializing Web3:', err);
+        setError(err instanceof Error ? err.message : 'Failed to initialize Web3');
       }
     };
 
     initializeWeb3();
-  }, [isConnected, publicClient]);
+  }, [isConnected, address]);
 
   return (
     <Web3Context.Provider value={{ provider, signer, contract, error }}>
       {children}
     </Web3Context.Provider>
   );
-};
-
-export const useWeb3 = (): Web3ContextType => {
-  const context = useContext(Web3Context);
-  if (context === undefined) {
-    throw new Error('useWeb3 must be used within a Web3Provider');
-  }
-  return context;
 };

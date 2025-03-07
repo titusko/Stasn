@@ -1,21 +1,17 @@
+// This file runs before anything else to initialize web3 related polyfills
 import { Buffer } from 'buffer';
-import process from 'process';
 
-// Polyfill Buffer for browser environment
 if (typeof window !== 'undefined') {
+  // Polyfill Buffer for the browser
   window.Buffer = window.Buffer || Buffer;
-  window.process = window.process || process;
 
-  // Add any other polyfills needed for web3 libraries
-  if (!window.global) {
-    window.global = window;
+  // Add any other required polyfills here
+  if (!window.process) {
+    window.process = { env: {} } as any;
   }
 }
 
-export default function initWeb3Polyfills() {
-  // This function is just a marker to ensure the imports above are executed
-  console.log('Web3 polyfills initialized');
-}
+export {};
 
 import { configureChains, createConfig } from 'wagmi';
 import { mainnet, sepolia, polygonMumbai, hardhat } from 'wagmi/chains';
