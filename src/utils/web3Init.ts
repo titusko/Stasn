@@ -1,13 +1,26 @@
 import { Buffer } from 'buffer';
+import process from 'process';
 
+// Polyfill Buffer for browser environment
 if (typeof window !== 'undefined') {
-  window.global = window;
-  window.Buffer = Buffer;
-} 
+  window.Buffer = window.Buffer || Buffer;
+  window.process = window.process || process;
+
+  // Add any other polyfills needed for web3 libraries
+  if (!window.global) {
+    window.global = window;
+  }
+}
+
+export default function initWeb3Polyfills() {
+  // This function is just a marker to ensure the imports above are executed
+  console.log('Web3 polyfills initialized');
+}
+
 import { configureChains, createConfig } from 'wagmi';
 import { mainnet, sepolia, polygonMumbai, hardhat } from 'wagmi/chains';
-import { publicProvider } from 'wagmi/providers/public';
 import { alchemyProvider } from 'wagmi/providers/alchemy';
+import { publicProvider } from 'wagmi/providers/public';
 import { InjectedConnector } from 'wagmi/connectors/injected';
 
 // Get Alchemy API key from environment variables
@@ -16,9 +29,9 @@ const alchemyApiKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY || '';
 // Configure chains with fallbacks
 const { chains, publicClient, webSocketPublicClient } = configureChains(
   [
-    process.env.NEXT_PUBLIC_NETWORK_ENV === 'production' ? mainnet : 
-    process.env.NEXT_PUBLIC_NETWORK_ENV === 'mumbai' ? polygonMumbai : 
-    process.env.NEXT_PUBLIC_NETWORK_ENV === 'sepolia' ? sepolia : 
+    process.env.NEXT_PUBLIC_NETWORK_ENV === 'production' ? mainnet :
+    process.env.NEXT_PUBLIC_NETWORK_ENV === 'mumbai' ? polygonMumbai :
+    process.env.NEXT_PUBLIC_NETWORK_ENV === 'sepolia' ? sepolia :
     hardhat
   ],
   [
@@ -31,7 +44,7 @@ const { chains, publicClient, webSocketPublicClient } = configureChains(
 export const config = createConfig({
   autoConnect: true,
   connectors: [
-    new InjectedConnector({ 
+    new InjectedConnector({
       chains,
       options: {
         name: 'Injected',
@@ -44,13 +57,6 @@ export const config = createConfig({
 });
 
 export { chains };
-// Initialize Web3 related polyfills for Next.js
-import { Buffer } from 'buffer';
-
-// Polyfill Buffer for the browser
-if (typeof window !== 'undefined') {
-  window.Buffer = window.Buffer || Buffer;
-}
 
 // Add ethereum type to window
 declare global {

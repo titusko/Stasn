@@ -18,18 +18,22 @@ export class IPFSService {
         {
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${PINATA_JWT}`
+            'Authorization': `Bearer ${PINATA_JWT}`
           }
         }
       );
       
-      return response.data.IpfsHash;
+      if (response.data && response.data.IpfsHash) {
+        return response.data.IpfsHash;
+      } else {
+        throw new Error('Failed to get IPFS hash from Pinata');
+      }
     } catch (error) {
       console.error('Error uploading to IPFS:', error);
-      throw new Error('Failed to upload data to IPFS');
+      throw error;
     }
   }
-
+  
   async uploadFile(file: File): Promise<string> {
     try {
       if (!PINATA_JWT) {
@@ -44,20 +48,24 @@ export class IPFSService {
         formData,
         {
           headers: {
-            'Content-Type': 'multipart/form-data',
-            Authorization: `Bearer ${PINATA_JWT}`
+            'Authorization': `Bearer ${PINATA_JWT}`,
+            'Content-Type': 'multipart/form-data'
           }
         }
       );
       
-      return response.data.IpfsHash;
+      if (response.data && response.data.IpfsHash) {
+        return response.data.IpfsHash;
+      } else {
+        throw new Error('Failed to get IPFS hash from Pinata');
+      }
     } catch (error) {
       console.error('Error uploading file to IPFS:', error);
-      throw new Error('Failed to upload file to IPFS');
+      throw error;
     }
   }
-
-  getUrl(hash: string): string {
+  
+  getIpfsUrl(hash: string): string {
     return `${PINATA_GATEWAY}${hash}`;
   }
 }
