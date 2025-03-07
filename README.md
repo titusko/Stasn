@@ -1,24 +1,78 @@
-Welcome to the NextJS base template bootstrapped using the `create-next-app`. This template supports TypeScript, but you can use normal JavaScript as well.
+# Monniverse Lagoon
+
+A decentralized task platform for the Monniverse ecosystem.
+
+## Features
+
+- Connect with Web3 wallet (MetaMask)
+- Create and manage quests
+- Assign and complete quests
+- Earn MONNI tokens for completing quests
+- Real-time notifications via Gmail
+
+## Project Structure
+
+```
+frontend/
+  ├── src/
+  │   ├── app/              # Next.js app router
+  │   │   ├── layout/      # Layout components
+  │   │   ├── tasks/       # Task-related components
+  │   │   ├── wallet/      # Wallet connection components
+  │   │   └── ui/          # Reusable UI components
+  │   ├── contexts/        # React contexts
+  │   ├── hooks/           # Custom React hooks
+  │   ├── lib/             # Library code
+  │   ├── services/        # External service integrations
+  │   ├── types/           # TypeScript type definitions
+  │   └── utils/           # Utility functions
+  ├── public/             # Static assets
+  └── package.json        # Project dependencies
+```
 
 ## Getting Started
 
-Hit the run button to start the development server.
+1. Install dependencies:
+```bash
+cd frontend
+npm install
+```
 
-You can start editing the page by modifying `pages/index.tsx`. The page auto-updates as you edit the file.
+2. Set up environment variables:
+```bash
+cp .env.example .env.local
+```
 
-[API routes](https://nextjs.org/docs/api-routes/introduction) can be accessed on `/api/hello`. This endpoint can be edited in `pages/api/hello.ts`.
+3. Start the development server:
+```bash
+npm run dev
+```
 
-The `pages/api` directory is mapped to `/api/*`. Files in this directory are treated as [API routes](https://nextjs.org/docs/api-routes/introduction) instead of React pages.
+4. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Learn More
+## Smart Contract Integration
 
-To learn more about Next.js, take a look at the following resources:
+1. Start the Hardhat node:
+```bash
+cd hardhat-project
+npx hardhat node
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+2. Deploy the contract:
+```bash
+npx hardhat run scripts/deploy.js --network localhost
+```
 
-## Productionizing your Next App
+3. Update the contract address in your `.env.local` file.
 
-To make your next App run smoothly in production make sure to deploy your project with [Repl Deployments](https://docs.replit.com/hosting/deployments/about-deployments)!
+## Contributing
 
-You can also produce a production build by running `npm run build` and [changing the run command](https://docs.replit.com/programming-ide/configuring-repl#run) to `npm run start`.
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
