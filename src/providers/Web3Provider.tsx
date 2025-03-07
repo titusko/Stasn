@@ -83,3 +83,68 @@ export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children
     </Web3Context.Provider>
   );
 };
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { ethers } from 'ethers';
+import { useWallet } from './WalletProvider';
+import TaskManagerABI from '../artifacts/contracts/TaskManager.sol/TaskManager.json';
+
+interface Web3ContextType {
+  contract: ethers.Contract | null;
+  provider: ethers.providers.Web3Provider | null;
+  error: string | null;
+}
+
+const Web3Context = createContext<Web3ContextType>({
+  contract: null,
+  provider: null,
+  error: null,
+});
+
+export const useWeb3 = () => useContext(Web3Context);
+
+export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isConnected } = useWallet();
+  const [contract, setContract] = useState<ethers.Contract | null>(null);
+  const [provider, setProvider] = useState<ethers.providers.Web3Provider | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const initializeContract = async () => {
+      try {
+        if (!isConnected || !window.ethereum) {
+          return;
+        }
+
+        setError(null);
+        
+        const web3Provider = new ethers.providers.Web3Provider(window.ethereum);
+        setProvider(web3Provider);
+        
+        const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
+        if (!contractAddress) {
+          throw new Error('Contract address not configured');
+        }
+        
+        const signer = web3Provider.getSigner();
+        const tokenContract = new ethers.Contract(
+          contractAddress,
+          TaskManagerABI.abi,
+          signer
+        );
+        
+        setContract(tokenContract);
+      } catch (err) {
+        console.error('Error initializing contract:', err);
+        setError(err instanceof Error ? err.message : 'Failed to initialize Web3');
+      }
+    };
+
+    initializeContract();
+  }, [isConnected]);
+
+  return (
+    <Web3Context.Provider value={{ contract, provider, error }}>
+      {children}
+    </Web3Context.Provider>
+  );
+};

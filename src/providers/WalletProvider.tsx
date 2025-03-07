@@ -98,3 +98,80 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     </WalletContext.Provider>
   );
 };
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { InjectedConnector } from '@wagmi/core';
+import { useAccount, useConnect, useDisconnect } from 'wagmi';
+
+interface WalletContextType {
+  address: string | undefined;
+  isConnected: boolean;
+  connect: () => void;
+  disconnect: () => void;
+  loading: boolean;
+  error: Error | null;
+}
+
+const WalletContext = createContext<WalletContextType>({
+  address: undefined,
+  isConnected: false,
+  connect: () => {},
+  disconnect: () => {},
+  loading: false,
+  error: null,
+});
+
+export const useWallet = () => useContext(WalletContext);
+
+export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { address, isConnected } = useAccount();
+  const { connect: wagmiConnect, isPending: connectPending, error: connectError } = useConnect();
+  const { disconnect: wagmiDisconnect, isPending: disconnectPending, error: disconnectError } = useDisconnect();
+  
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    if (connectError || disconnectError) {
+      setError(connectError || disconnectError);
+    } else {
+      setError(null);
+    }
+  }, [connectError, disconnectError]);
+
+  useEffect(() => {
+    setLoading(connectPending || disconnectPending);
+  }, [connectPending, disconnectPending]);
+
+  const connect = () => {
+    try {
+      wagmiConnect({ connector: new InjectedConnector() });
+    } catch (error) {
+      console.error('Failed to connect wallet:', error);
+      setError(error instanceof Error ? error : new Error('Failed to connect wallet'));
+    }
+  };
+
+  const disconnect = () => {
+    try {
+      wagmiDisconnect();
+    } catch (error) {
+      console.error('Failed to disconnect wallet:', error);
+      setError(error instanceof Error ? error : new Error('Failed to disconnect wallet'));
+    }
+  };
+
+  return (
+    <WalletContext.Provider
+      value={{
+        address,
+        isConnected,
+        connect,
+        disconnect,
+        loading,
+        error,
+      }}
+    >
+      {children}
+    </WalletContext.Provider>
+  );
+};
