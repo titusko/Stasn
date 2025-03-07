@@ -44,3 +44,19 @@ export const config = createConfig({
 });
 
 export { chains };
+// Initialize Web3 related polyfills for Next.js
+import { Buffer } from 'buffer';
+
+// Polyfill Buffer for the browser
+if (typeof window !== 'undefined') {
+  window.Buffer = window.Buffer || Buffer;
+}
+
+// Add ethereum type to window
+declare global {
+  interface Window {
+    ethereum?: any;
+  }
+}
+
+export {};

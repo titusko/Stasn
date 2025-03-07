@@ -1,4 +1,3 @@
-
 import { ethers } from 'ethers';
 import { ipfsService } from './ipfsService';
 
@@ -7,30 +6,50 @@ export interface Task {
   title: string;
   description: string;
   reward: ethers.BigNumber;
-  deadline: number;
   creator: string;
   assignee: string;
-  status: TaskStatus;
-  proofSubmitted: boolean;
+  deadline: number;
+  status: number;
   proofHash: string;
   createdAt: number;
 }
 
-export enum TaskStatus {
-  Open = 0,
-  Assigned = 1,
-  Completed = 2,
-  Cancelled = 3,
-  Disputed = 4
-}
-
 class ContractService {
+  private provider: ethers.providers.Provider | null = null;
   private contract: ethers.Contract | null = null;
   private signer: ethers.Signer | null = null;
 
-  init(contract: ethers.Contract, signer: ethers.Signer) {
-    this.contract = contract;
-    this.signer = signer;
+  async init(provider: ethers.providers.Web3Provider) {
+    this.provider = provider;
+    this.signer = provider.getSigner();
+
+    // Initialize contract with address and ABI
+    const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
+
+    if (!contractAddress) {
+      throw new Error('Contract address not found in environment variables');
+    }
+
+    // Replace with your actual ABI
+    const abi = [
+      // Add your contract ABI here.  This is crucial and needs to be filled in.
+      "function getTaskCount() view returns (uint256)",
+      "function createTask(string memory metadataHash, uint256 rewardWei, uint256 deadline) payable returns (uint256)",
+      "function getTask(uint256 taskId) view returns (string memory metadataHash, uint256 reward, uint256 deadline, address creator, address assignee, uint8 status, bool proofSubmitted, string memory proofHash)",
+      "function assignTask(uint256 taskId) returns (bool)",
+      "function submitProof(uint256 taskId, string memory proofHash) returns (bool)",
+      "function approveTask(uint256 taskId) returns (bool)",
+      "function disputeTask(uint256 taskId, string memory disputeHash) returns (bool)",
+      "function withdrawTask(uint256 taskId) returns (bool)"
+
+    ];
+
+
+    this.contract = new ethers.Contract(
+      contractAddress,
+      abi,
+      this.signer
+    );
   }
 
   async getTaskCount(): Promise<number> {
@@ -46,42 +65,40 @@ class ContractService {
     deadline: number
   ): Promise<number> {
     if (!this.contract) throw new Error('Contract not initialized');
-    
-    // Upload metadata to IPFS
+
     const metadata = {
       title,
       description,
       createdAt: Math.floor(Date.now() / 1000)
     };
-    
+
     const metadataHash = await ipfsService.uploadJson(metadata);
     const rewardWei = ethers.utils.parseEther(reward);
-    
+
     const tx = await this.contract.createTask(
       metadataHash,
       rewardWei,
       deadline,
       { value: rewardWei }
     );
-    
+
     const receipt = await tx.wait();
     const event = receipt.events?.find((e: any) => e.event === 'TaskCreated');
-    
+
     if (!event) throw new Error('Task creation event not found');
     return event.args.taskId.toNumber();
   }
 
-  async getTask(taskId: number): Promise<Task> {
+  async getTask(taskId: number): Promise<Task | null> {
     if (!this.contract) throw new Error('Contract not initialized');
-    
+
     const taskData = await this.contract.getTask(taskId);
     const metadataHash = taskData.metadataHash;
-    
-    // Fetch metadata from IPFS
+
     const metadataUrl = ipfsService.getIpfsUrl(metadataHash);
     const response = await fetch(metadataUrl);
     const metadata = await response.json();
-    
+
     return {
       id: taskId,
       title: metadata.title,

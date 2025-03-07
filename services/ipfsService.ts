@@ -4,7 +4,6 @@ import axios from 'axios';
 const PINATA_JWT = process.env.NEXT_PUBLIC_PINATA_JWT;
 const PINATA_GATEWAY = 'https://gateway.pinata.cloud/ipfs/';
 const PINATA_API_URL = 'https://api.pinata.cloud/pinning/pinJSONToIPFS';
-const PINATA_FILE_URL = 'https://api.pinata.cloud/pinning/pinFileToIPFS';
 
 export class IPFSService {
   async uploadJson(data: any): Promise<string> {
@@ -41,7 +40,7 @@ export class IPFSService {
       formData.append('file', file);
       
       const response = await axios.post(
-        PINATA_FILE_URL,
+        'https://api.pinata.cloud/pinning/pinFileToIPFS',
         formData,
         {
           headers: {
@@ -58,7 +57,7 @@ export class IPFSService {
     }
   }
 
-  getIpfsUrl(hash: string): string {
+  getUrl(hash: string): string {
     return `${PINATA_GATEWAY}${hash}`;
   }
 }

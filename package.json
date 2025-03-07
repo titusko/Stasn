@@ -1,20 +1,15 @@
+
 {
   "name": "monniverse-root",
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "preinstall": "npx only-allow pnpm",
-    "frontend": "pnpm --filter frontend",
-    "blockchain": "pnpm --filter blockchain",
-    "dev": "powershell -File ./scripts/start-dev.ps1",
-    "clean": "powershell -File ./scripts/cleanup-all.ps1",
-    "setup": "pnpm install && pnpm run prepare",
-    "prepare": "pnpm -r run prepare",
-    "build": "pnpm -r run build",
-    "lint": "pnpm -r run lint",
-    "test": "pnpm -r run test"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "jest"
   },
-<<<<<<< Updated upstream
   "dependencies": {
     "@headlessui/react": "^2.2.0",
     "@hookform/resolvers": "^4.1.3",
@@ -22,6 +17,8 @@
     "@tailwindcss/forms": "^0.5.10",
     "@tanstack/react-query": "^5.67.1",
     "axios": "^1.8.1",
+    "buffer": "^6.0.3",
+    "crypto-browserify": "^3.12.0",
     "daisyui": "^5.0.0",
     "ethers": "^5.7.2",
     "framer-motion": "^12.4.10",
@@ -31,6 +28,7 @@
     "react-hook-form": "^7.54.2",
     "react-icons": "^5.5.0",
     "react-query": "^3.39.3",
+    "stream-browserify": "^3.0.0",
     "wagmi": "^0.12.12",
     "zod": "^3.24.2"
   },
@@ -44,11 +42,8 @@
     "postcss": "^8.5.3",
     "tailwindcss": "^4.0.11",
     "typescript": "^5.3.3"
-=======
-  "packageManager": "pnpm@8.15.4",
+  },
   "engines": {
-    "node": ">=18.0.0",
-    "pnpm": ">=8.15.0"
->>>>>>> Stashed changes
+    "node": ">=18.0.0"
   }
 }

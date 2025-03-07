@@ -175,3 +175,128 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     </WalletContext.Provider>
   );
 };
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { ethers } from 'ethers';
+
+interface WalletContextType {
+  address: string | null;
+  connect: () => Promise<void>;
+  disconnect: () => void;
+  isConnected: boolean;
+  provider: ethers.providers.Web3Provider | null;
+}
+
+const WalletContext = createContext<WalletContextType>({
+  address: null,
+  connect: async () => {},
+  disconnect: () => {},
+  isConnected: false,
+  provider: null,
+});
+
+export const useWallet = () => useContext(WalletContext);
+
+interface WalletProviderProps {
+  children: ReactNode;
+}
+
+export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
+  const [address, setAddress] = useState<string | null>(null);
+  const [provider, setProvider] = useState<ethers.providers.Web3Provider | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+
+  const initializeEthers = async () => {
+    // Check if window is defined (browser environment)
+    if (typeof window !== 'undefined' && window.ethereum) {
+      try {
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        setProvider(provider);
+        return provider;
+      } catch (error) {
+        console.error('Failed to initialize ethers:', error);
+        return null;
+      }
+    }
+    return null;
+  };
+
+  const connect = async () => {
+    try {
+      const ethersProvider = provider || await initializeEthers();
+      if (!ethersProvider) throw new Error('No ethereum provider found');
+      
+      await window.ethereum.request({ method: 'eth_requestAccounts' });
+      const signer = ethersProvider.getSigner();
+      const currentAddress = await signer.getAddress();
+      
+      setAddress(currentAddress);
+      setIsConnected(true);
+      
+      // Set up account change listener
+      window.ethereum.on('accountsChanged', handleAccountsChanged);
+      
+      return currentAddress;
+    } catch (error) {
+      console.error('Error connecting wallet:', error);
+      throw error;
+    }
+  };
+
+  const disconnect = () => {
+    setAddress(null);
+    setIsConnected(false);
+    
+    // Remove listeners
+    if (window.ethereum) {
+      window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+    }
+  };
+
+  const handleAccountsChanged = (accounts: string[]) => {
+    if (accounts.length === 0) {
+      // User disconnected their wallet
+      disconnect();
+    } else if (accounts[0] !== address) {
+      // User switched accounts
+      setAddress(accounts[0]);
+    }
+  };
+
+  useEffect(() => {
+    // Initialize on mount
+    initializeEthers();
+    
+    // Check if already connected
+    if (typeof window !== 'undefined' && window.ethereum) {
+      window.ethereum.request({ method: 'eth_accounts' })
+        .then((accounts: string[]) => {
+          if (accounts.length > 0) {
+            setAddress(accounts[0]);
+            setIsConnected(true);
+          }
+        })
+        .catch(console.error);
+    }
+    
+    return () => {
+      // Clean up listeners
+      if (window.ethereum) {
+        window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+      }
+    };
+  }, []);
+
+  return (
+    <WalletContext.Provider
+      value={{
+        address,
+        connect,
+        disconnect,
+        isConnected,
+        provider,
+      }}
+    >
+      {children}
+    </WalletContext.Provider>
+  );
+};

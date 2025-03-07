@@ -148,3 +148,75 @@ export const Web3Provider: React.FC<{ children: React.ReactNode }> = ({ children
     </Web3Context.Provider>
   );
 };
+import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { ethers, Contract } from 'ethers';
+import { useWallet } from './WalletProvider';
+
+// Mock ABI for testing - replace with your actual ABI
+const mockAbi = [
+  "function balanceOf(address owner) view returns (uint256)",
+  "function transfer(address to, uint amount) returns (bool)",
+  "event Transfer(address indexed from, address indexed to, uint amount)"
+];
+
+interface Web3ContextType {
+  contract: Contract | null;
+  error: string | null;
+}
+
+const Web3Context = createContext<Web3ContextType>({
+  contract: null,
+  error: null,
+});
+
+export const useWeb3 = () => useContext(Web3Context);
+
+interface Web3ProviderProps {
+  children: ReactNode;
+}
+
+export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
+  const { provider, isConnected } = useWallet();
+  const [contract, setContract] = useState<Contract | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const initializeContract = async () => {
+      if (!provider || !isConnected) {
+        setContract(null);
+        return;
+      }
+
+      try {
+        setError(null);
+        const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS;
+        
+        if (!contractAddress) {
+          throw new Error('Contract address not found in environment variables');
+        }
+
+        const signer = provider.getSigner();
+        const tokenContract = new ethers.Contract(contractAddress, mockAbi, signer);
+        
+        setContract(tokenContract);
+      } catch (err) {
+        console.error('Error initializing contract:', err);
+        setError(err instanceof Error ? err.message : 'Failed to initialize contract');
+        setContract(null);
+      }
+    };
+
+    initializeContract();
+  }, [provider, isConnected]);
+
+  return (
+    <Web3Context.Provider
+      value={{
+        contract,
+        error,
+      }}
+    >
+      {children}
+    </Web3Context.Provider>
+  );
+};
