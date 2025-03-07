@@ -1,0 +1,985 @@
+3.3 Frontend Next.js Application (continued)
+typescriptCopy// apps/web/src/components/TaskSubmitModal/TaskSubmitModal.tsx (continued)
+                  className="flex gap-2 items-center"
+                >
+                  <Upload size={16} />
+                  Choose File
+                </Button>
+                {selectedFile && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <FileIcon size={16} />
+                    {selectedFile.name}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {error && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={isUploading || isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={!title || !description || isUploading || isSubmitting}
+            >
+              {isUploading ? 'Uploading...' : isSubmitting ? 'Submitting...' : 'Submit Task'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+typescriptCopy// apps/web/src/hooks/useContractWrite.ts
+import { useState, useCallback } from 'react';
+import { ethers } from 'ethers';
+import { useWalletContext } from '@/contexts/WalletContext';
+
+interface ContractWriteOptions {
+  contract: {
+    address: string;
+    abi: any[];
+  };
+  method: string;
+  onSuccess?: (receipt: ethers.TransactionReceipt) => void;
+  onError?: (error: Error) => void;
+}
+
+export function useContractWrite({
+  contract,
+  method,
+  onSuccess,
+  onError,
+}: ContractWriteOptions) {
+  const { signer } = useWalletContext();
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [receipt, setReceipt] = useState<ethers.TransactionReceipt | null>(null);
+
+  const write = useCallback(
+    async (args: any[] = []) => {
+      if (!signer) {
+        const walletError = new Error('Wallet not connected');
+        setError('Wallet not connected');
+        onError?.(walletError);
+        throw walletError;
+      }
+
+      setIsLoading(true);
+      setError(null);
+      setTxHash(null);
+      setReceipt(null);
+
+      try {
+        const contractInstance = new ethers.Contract(
+          contract.address,
+          contract.abi,
+          signer
+        );
+
+        // Execute the contract method
+        const tx = await contractInstance[method](...args);
+        setTxHash(tx.hash);
+
+        // Wait for transaction confirmation
+        const receipt = await tx.wait();
+        setReceipt(receipt);
+        onSuccess?.(receipt);
+        
+        return {
+          tx,
+          receipt,
+          taskId: receipt.events?.find(e => e.event === 'TaskSubmitted')?.args?.taskId
+        };
+      } catch (err: any) {
+        const errorMessage = err.reason || err.message || 'Transaction failed';
+        setError(errorMessage);
+        onError?.(err);
+        throw err;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [signer, contract, method, onSuccess, onError]
+  );
+
+  const reset = useCallback(() => {
+    setError(null);
+    setTxHash(null);
+    setReceipt(null);
+  }, []);
+
+  return {
+    write,
+    isLoading,
+    error,
+    txHash,
+    receipt,
+    reset,
+  };
+}
+typescriptCopy// apps/web/src/contexts/WalletContext.tsx
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { ethers } from 'ethers';
+
+interface WalletContextType {
+  provider: ethers.Provider | null;
+  signer: ethers.Signer | null;
+  address: string | null;
+  chainId: number | null;
+  connect: () => Promise<void>;
+  disconnect: () => void;
+  isConnecting: boolean;
+  error: string | null;
+}
+
+const WalletContext = createContext<WalletContextType>({
+  provider: null,
+  signer: null,
+  address: null,
+  chainId: null,
+  connect: async () => {},
+  disconnect: () => {},
+  isConnecting: false,
+  error: null,
+});
+
+export const useWalletContext = () => useContext(WalletContext);
+
+interface WalletProviderProps {
+  children: React.ReactNode;
+}
+
+export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
+  const [provider, setProvider] = useState<ethers.Provider | null>(null);
+  const [signer, setSigner] = useState<ethers.Signer | null>(null);
+  const [address, setAddress] = useState<string | null>(null);
+  const [chainId, setChainId] = useState<number | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const connect = useCallback(async () => {
+    if (!window.ethereum) {
+      setError('No Ethereum wallet detected. Please install MetaMask.');
+      return;
+    }
+
+    setIsConnecting(true);
+    setError(null);
+
+    try {
+      // Request account access
+      await window.ethereum.request({ method: 'eth_requestAccounts' });
+      
+      // Create provider
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      setProvider(provider);
+      
+      // Get signer and address
+      const signer = await provider.getSigner();
+      setSigner(signer);
+      setAddress(await signer.getAddress());
+      
+      // Get chain ID
+      const network = await provider.getNetwork();
+      setChainId(Number(network.chainId));
+    } catch (err: any) {
+      console.error('Error connecting wallet:', err);
+      setError(err.message || 'Failed to connect wallet');
+    } finally {
+      setIsConnecting(false);
+    }
+  }, []);
+
+  const disconnect = useCallback(() => {
+    setProvider(null);
+    setSigner(null);
+    setAddress(null);
+    setChainId(null);
+    setError(null);
+  }, []);
+
+  // Handle account and chain changes
+  useEffect(() => {
+    if (!window.ethereum) return;
+
+    const handleAccountsChanged = (accounts: string[]) => {
+      if (accounts.length === 0) {
+        disconnect();
+      } else if (address !== accounts[0]) {
+        connect();
+      }
+    };
+
+    const handleChainChanged = () => {
+      window.location.reload();
+    };
+
+    window.ethereum.on('accountsChanged', handleAccountsChanged);
+    window.ethereum.on('chainChanged', handleChainChanged);
+
+    return () => {
+      window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+      window.ethereum.removeListener('chainChanged', handleChainChanged);
+    };
+  }, [address, connect, disconnect]);
+
+  return (
+    <WalletContext.Provider
+      value={{
+        provider,
+        signer,
+        address,
+        chainId,
+        connect,
+        disconnect,
+        isConnecting,
+        error,
+      }}
+    >
+      {children}
+    </WalletContext.Provider>
+  );
+};
+3.4 API Service
+typescriptCopy// apps/api/src/services/ipfsService.ts
+import { IPFSService } from 'ipfs';
+import { config } from '@/config';
+
+// Create singleton instance
+const ipfsService = new IPFSService(config.pinataJwt);
+
+export { ipfsService };
+typescriptCopy// apps/api/src/routes/ipfs.ts
+import { Router } from 'express';
+import multer from 'multer';
+import { ipfsService } from '@/services/ipfsService';
+import { authenticateUser } from '@/middleware/auth';
+
+const router = Router();
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+});
+
+// Upload file to IPFS
+router.post('/upload', authenticateUser, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file provided' });
+    }
+
+    const name = req.body.name || req.file.originalname;
+    let metadata = {};
+    
+    try {
+      metadata = req.body.metadata ? JSON.parse(req.body.metadata) : {};
+    } catch (e) {
+      // Ignore JSON parse errors
+    }
+
+    const result = await ipfsService.uploadFile(req.file.buffer, {
+      name,
+      pinataMetadata: {
+        name,
+        keyvalues: {
+          userId: req.user.id,
+          ...metadata,
+        },
+      },
+    });
+
+    return res.status(200).json(result);
+  } catch (error: any) {
+    console.error('IPFS upload error:', error);
+    return res.status(500).json({ message: error.message || 'Upload failed' });
+  }
+});
+
+// Get content from IPFS
+router.get('/content/:hash', async (req, res) => {
+  try {
+    const { hash } = req.params;
+    const content = await ipfsService.getContent(hash);
+    
+    return res.status(200).json(content);
+  } catch (error: any) {
+    console.error('IPFS content retrieval error:', error);
+    return res.status(500).json({ message: error.message || 'Failed to retrieve content' });
+  }
+});
+
+// Delete content from IPFS (admin only)
+router.delete('/unpin/:hash', authenticateUser, async (req, res) => {
+  try {
+    if (!req.user.isAdmin) {
+      return res.status(403).json({ message: 'Admin access required' });
+    }
+    
+    const { hash } = req.params;
+    await ipfsService.unpinContent(hash);
+    
+    return res.status(200).json({ message: 'Content unpinned successfully' });
+  } catch (error: any) {
+    console.error('IPFS unpin error:', error);
+    return res.status(500).json({ message: error.message || 'Failed to unpin content' });
+  }
+});
+
+export default router;
+4. CI/CD Integration
+4.1 GitHub Actions Workflow
+yamlCopy# .github/workflows/ci.yml
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 8.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 8.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 8.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 8.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            apps/web/.next
+            apps/api/dist
+yamlCopy# .github/workflows/deploy.yml
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 8.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'pnpm'
+      
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      
+      - name: Build
+        run: pnpm build
+        env:
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_CONTRACT_ADDRESS: ${{ secrets.NEXT_PUBLIC_CONTRACT_ADDRESS }}
+      
+      # Deploy Web App
+      - name: Deploy Web App
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages publish apps/web/.next --project-name=web-app
+      
+      # Deploy API
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      
+      - name: Deploy API to Lambda
+        run: |
+          cd apps/api
+          zip -r api.zip dist node_modules
+          aws lambda update-function-code --function-name api-service --zip-file fileb://api.zip
+5. Quality Assurance & Testing
+5.1 Jest Configuration
+jsCopy// packages/config/jest-base.js
+module.exports = {
+  preset: 'ts-jest',
+  testEnvironment: 'node',
+  testMatch: ['**/?(*.)+(spec|test).ts?(x)'],
+  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
+  collectCoverage: true,
+  coverageDirectory: 'coverage',
+  coverageReporters: ['text', 'lcov'],
+  coverageThreshold: {
+    global: {
+      branches: 70,
+      functions: 70,
+      lines: 70,
+      statements: 70,
+    },
+  },
+  transform: {
+    '^.+\\.[jt]sx?$': [
+      'ts-jest',
+      {
+        tsconfig: '<rootDir>/tsconfig.json',
+      },
+    ],
+  },
+};
+jsCopy// jest.config.js (in apps/web)
+const baseConfig = require('config/jest-base');
+
+module.exports = {
+  ...baseConfig,
+  testEnvironment: 'jsdom',
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+  moduleNameMapper: {
+    '^@/(.*)$': '<rootDir>/src/$1',
+  },
+  transform: {
+    '^.+\\.(js|jsx|ts|tsx)$': ['babel-jest', { presets: ['next/babel'] }],
+  },
+};
+jsCopy// jest.setup.js (in apps/web)
+import '@testing-library/jest-dom';
+import 'whatwg-fetch';
+import { TextDecoder, TextEncoder } from 'util';
+
+// Mock global objects needed for Next.js
+global.TextEncoder = TextEncoder;
+global.TextDecoder = TextDecoder;
+
+// Mock window.ethereum
+global.window.ethereum = {
+  request: jest.fn(),
+  on: jest.fn(),
+  removeListener: jest.fn(),
+};
+
+// Mock matchMedia
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: jest.fn().mockImplementation(query => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: jest.fn(),
+    removeListener: jest.fn(),
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    dispatchEvent: jest.fn(),
+  })),
+});
+5.2 Unit Tests
+typescriptCopy// packages/ipfs/src/ipfsService.test.ts
+import { IPFSService } from './ipfsService';
+import axios from 'axios';
+import fs from 'fs';
+import { Readable } from 'stream';
+
+// Mock axios and fs
+jest.mock('axios');
+jest.mock('fs', () => ({
+  createReadStream: jest.fn(),
+}));
+
+const mockedAxios = axios as jest.Mocked<typeof axios>;
+
+describe('IPFSService', () => {
+  const mockJwt = 'test-jwt';
+  const mockApiUrl = 'https://api.pinata.cloud';
+  let ipfsService: IPFSService;
+
+  beforeEach(() => {
+    ipfsService = new IPFSService(mockJwt, mockApiUrl);
+    jest.clearAllMocks();
+  });
+
+  describe('uploadFile', () => {
+    test('should upload a file path correctly', async () => {
+      // Mock response
+      mockedAxios.post.mockResolvedValueOnce({
+        data: {
+          IpfsHash: 'mock-hash',
+          PinSize: 1000,
+          Timestamp: '2023-01-01T00:00:00.000Z',
+        },
+      });
+
+      // Mock fs.createReadStream
+      const mockReadStream = {} as Readable;
+      (fs.createReadStream as jest.Mock).mockReturnValueOnce(mockReadStream);
+
+      // Call the method
+      const result = await ipfsService.uploadFile('test-file.txt');
+
+      // Assertions
+      expect(fs.createReadStream).toHaveBeenCalledWith('test-file.txt');
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        `${mockApiUrl}/pinning/pinFileToIPFS`,
+        expect.any(Object),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: `Bearer ${mockJwt}`,
+          }),
+        })
+      );
+      expect(result).toEqual({
+        IpfsHash: 'mock-hash',
+        PinSize: 1000,
+        Timestamp: '2023-01-01T00:00:00.000Z',
+      });
+    });
+
+    test('should handle errors properly', async () => {
+      // Mock error response
+      mockedAxios.post.mockRejectedValueOnce({
+        isAxiosError: true,
+        response: {
+          data: {
+            error: 'Test error',
+          },
+        },
+      });
+
+      // Call the method and expect it to throw
+      await expect(ipfsService.uploadFile('test-file.txt')).rejects.toThrow(
+        'IPFS upload failed: Test error'
+      );
+    });
+  });
+
+  describe('uploadJSON', () => {
+    test('should upload JSON correctly', async () => {
+      // Mock response
+      mockedAxios.post.mockResolvedValueOnce({
+        data: {
+          IpfsHash: 'mock-json-hash',
+          PinSize: 100,
+          Timestamp: '2023-01-01T00:00:00.000Z',
+        },
+      });
+
+      // Test data
+      const jsonData = { test: 'data' };
+      const options = {
+        pinataMetadata: {
+          name: 'test-json',
+        },
+      };
+
+      // Call the method
+      const result = await ipfsService.uploadJSON(jsonData, options);
+
+      // Assertions
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        `${mockApiUrl}/pinning/pinJSONToIPFS`,
+        {
+          pinataContent: jsonData,
+          pinataMetadata: options.pinataMetadata,
+          pinataOptions: undefined,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${mockJwt}`,
+          },
+        }
+      );
+      expect(result).toEqual({
+        IpfsHash: 'mock-json-hash',
+        PinSize: 100,
+        Timestamp: '2023-01-01T00:00:00.000Z',
+      });
+    });
+  });
+});
+6. Documentation & Developer Experience
+6.1 README.md Template
+markdownCopy# Project Monorepo
+
+This monorepo contains all the code for our blockchain-based application.
+
+## Tech Stack
+
+- **Frontend**: Next.js, React, Tailwind CSS
+- **Backend**: Express, Node.js
+- **Blockchain**: Hardhat, Ethers.js, Solidity
+- **Storage**: IPFS via Pinata
+- **Tooling**: Turborepo, PNPM, TypeScript, ESLint, Prettier
+
+## Prerequisites
+
+- Node.js (v18 or higher)
+- PNPM (v8.15.4 or higher)
+- Git
+
+## Getting Started
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/your-username/project-monorepo.git
+cd project-monorepo
+
+# Install dependencies
+pnpm install
+Environment Setup
+Copy the example environment file and fill in your values:
+bashCopycp .env.example .env
+Required environment variables:
+
+NEXT_PUBLIC_API_URL: URL for the backend API
+NEXT_PUBLIC_CONTRACT_ADDRESS: Deployed contract address
+PINATA_JWT: JWT for Pinata IPFS API
+PRIVATE_KEY: Private key for contract deployment (only for deployment)
+
+Development
+bashCopy# Start development servers
+pnpm dev
+
+# Build all packages
+pnpm build
+
+# Run tests
+pnpm test
+
+# Lint code
+pnpm lint
+Available Scripts
+
+pnpm dev: Start all applications in development mode
+pnpm build: Build all packages
+pnpm lint: Run ESLint on all packages
+pnpm test: Run tests for all packages
+pnpm typecheck: Run TypeScript type checking
+pnpm clean: Clean build artifacts
+pnpm create:component: Create a new component
+pnpm create:package: Create a new package
+pnpm generate:sdk: Generate contract SDK from artifacts
+
+Project Structure
+Copy/
+├── apps/
+│   ├── web/                  # Next.js frontend application
+│   └── api/                  # Backend API service
+├── packages/
+│   ├── blockchain/           # Smart contract development & interactions
+│   ├── ui/                   # Shared UI components
+│   ├── config/               # Shared configurations
+│   ├── tsconfig/             # Shared TypeScript configurations
+│   ├── eslint-config/        # Shared ESLint configurations
+│   ├── ipfs/                 # IPFS integration utilities
+│   └── contracts-sdk/        # Auto-generated contract SDK
+├── tooling/
+│   ├── generators/           # Code generators
+│   ├── scripts/              # Utility scripts
+│   └── ci/                   # CI/CD configuration
+Deployment
+The project is set up with GitHub Actions for CI/CD:
+
+Pushing to develop will run tests and linting
+Pushing to main will trigger a deployment
+
+Contributing
+Please see CONTRIBUTING.md for details on our code of conduct and the process for submitting pull requests.
+License
+This project is licensed under the MIT License - see the LICENSE file for details.
+Copy
+#### 6.2 Contribution Guidelines
+
+```markdown
+# Contributing Guidelines
+
+Thank you for considering contributing to this project! Here are some guidelines to help you get started.
+
+## Development Process
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## Commit Message Format
+
+We follow the [Conventional Commits](https://www.conventionalcommits.org/) specification. This leads to more readable messages that are easy to follow when looking through the project history.
+
+Examples:
+feat: add new component for task listing
+fix: resolve issue with wallet connection
+docs: update README with new API information
+test: add tests for IPFS service
+refactor: restructure blockchain package
+Copy
+## Pull Request Process
+
+1. Make sure your code passes all tests and linting checks
+2. Update the README.md and documentation with details of changes if applicable
+3. Add an entry to the CHANGELOG.md if applicable
+4. The PR needs to be approved by at least one maintainer
+
+## Code Style
+
+- We use ESLint and Prettier for code formatting
+- Run `pnpm lint` to check your code
+- Run `pnpm format` to format your code
+
+## Adding Dependencies
+
+- Add shared dependencies to the root `package.json`
+- Add package-specific dependencies to the respective package's `package.json`
+- Always use `pnpm add` to install dependencies
+
+## Creating New Components
+
+Use our generators to create new components:
+
+```bash
+pnpm create:component
+Creating New Packages
+Use our generators to create new packages:
+bashCopypnpm create:package
+Testing
+
+Write tests for all new features
+Run tests with pnpm test
+Aim for at least 70% code coverage
+
+License
+By contributing, you agree that your contributions will be licensed under the project's MIT License.
+Copy
+### 7. Deployment & Infrastructure
+
+#### 7.1 Docker Configuration
+
+```dockerfile
+# Dockerfile
+FROM node:18-alpine AS base
+
+# Install pnpm
+RUN corepack enable
+RUN corepack prepare pnpm@8.15.4 --activate
+
+# Set working directory
+WORKDIR /app
+
+# Copy files needed for installation
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+
+# Copy package.json files from all packages
+COPY apps/web/package.json ./apps/web/package.json
+COPY apps/api/package.json ./apps/api/package.json
+COPY packages/ui/package.json ./packages/ui/package.json
+COPY packages/config/package.json ./packages/config/package.json
+COPY packages/tsconfig/package.json ./packages/tsconfig/package.json
+COPY packages/eslint-config/package.json ./packages/eslint-config/package.json
+COPY packages/blockchain/package.json ./packages/blockchain/package.json
+COPY packages/ipfs/package.json ./packages/ipfs/package.json
+COPY packages/contracts-sdk/package.json ./packages/contracts-sdk/package.json
+
+# Install all dependencies
+RUN pnpm install --frozen-lockfile
+
+# Build stage
+FROM base AS builder
+
+# Copy all source files
+COPY . .
+
+# Build all packages
+RUN pnpm build
+
+# Production web app
+FROM node:18-alpine AS web-app
+
+WORKDIR /app
+
+# Copy necessary files and built artifacts
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/apps/web/package.json ./apps/web/package.json
+COPY --from=builder /app/apps/web/.next ./apps/web/.next
+COPY --from=builder /app/apps/web/public ./apps/web/public
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/web/node_modules ./apps/web/node_modules
+
+# Set environment variables
+ENV NODE_ENV production
+ENV PORT 3000
+
+# Expose port
+EXPOSE 3000
+
+# Start the app
+CMD ["node", "apps/web/node_modules/.bin/next", "start", "apps/web"]
+
+# Production API
+FROM node:18-alpine AS api
+
+WORKDIR /app
+
+# Copy necessary files and built artifacts
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/apps/api/package.json ./apps/api/package.json
+COPY --from=builder /app/apps/api/dist ./apps/api/dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/api/node_modules ./apps/api/node_modules
+
+# Set environment variables
+ENV NODE_ENV production
+ENV PORT 4000
+
+# Expose port
+EXPOSE 4000
+
+# Start the app
+CMD ["node", "apps/api/dist/index.js"]
+yamlCopy# docker-compose.yml
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      target: web-app
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      target: api
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    restart: unless-stopped
+7.2 Cloud Infrastructure
+terraformCopy# terraform/main.tf
+provider "aws" {
+  region = "us-east-1"
+}
+
+resource "aws_ecr_repository" "web_app" {
+  name                 = "web-app"
+  image_tag_mutability = "MUTABLE"
+}
+
+resource "aws_ecr_repository" "api" {
+  name                 = "api"
+  image_tag_mutability = "MUTABLE"
+}
+
+resource "aws_ecs_cluster" "main" {
+  name = "app-cluster"
+}
+
+resource "aws_cloudwatch_log_group" "ecs_logs" {
+  name = "/ecs/app-logs"
+  retention_in_days = 30
+}
+
+resource "aws_ecs_task_definition" "web" {
+  family                   = "web-app"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = "256"
+  memory                   = "512"
+  execution_role_arn       = aws_iam_role.ecs_execution_role.arn
+  
+  container_definitions = jsonencode([
+    {
+      name      = "web-app",
+      image     = "${aws_ecr_repository.web_app.repository_url}:latest",
+      essential = true,
+      portMappings = [
+        {
+          containerPort = 3000,
+          hostPort      = 3000,
+          protocol      = "tcp"
+        }
+      ],
+      environment = [
+        { name = "NODE_ENV", value = "production" },
+        { name = "NEXT_PUBLIC_API_URL", value = "https://api.example.com" }
+      ],
