@@ -1,0 +1,6 @@
+
+{
+  "extends": "tsconfig/blockchain.json",
+  "include": ["./scripts", "./test", "./typechain-types"],
+  "files": ["./hardhat.config.ts"]
+}
