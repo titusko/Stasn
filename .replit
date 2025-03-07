@@ -22,3 +22,6 @@ args = "npm run dev"
 [[ports]]
 localPort = 3000
 externalPort = 80
+
+[nix]
+channel = "stable-24_05"
