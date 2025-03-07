@@ -1,126 +1,101 @@
-
 const fs = require('fs');
 const path = require('path');
-const readline = require('readline');
-
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout
-});
-
-async function prompt(question) {
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      resolve(answer);
-    });
-  });
-}
+const prompts = require('prompts');
 
 async function generateComponent() {
-  try {
-    console.log('\n🧩 Component Generator 🧩\n');
-    
-    // Get component name
-    const name = await prompt('Component name: ');
-    if (!name) {
-      console.log('❌ Component name is required');
-      rl.close();
-      return;
+  const response = await prompts([
+    {
+      type: 'text',
+      name: 'name',
+      message: 'What is your component name?'
+    },
+    {
+      type: 'select',
+      name: 'type',
+      message: 'What type of component?',
+      choices: [
+        { title: 'UI Component', value: 'ui' },
+        { title: 'Page Component', value: 'page' },
+        { title: 'Layout Component', value: 'layout' }
+      ]
+    },
+    {
+      type: 'confirm',
+      name: 'withStyles',
+      message: 'Include styles?'
+    },
+    {
+      type: 'confirm',
+      name: 'withTests',
+      message: 'Include tests?'
     }
-    
-    // Format component name to PascalCase
-    const componentName = name
-      .split(/[-_\s]+/)
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join('');
-    
-    // Get component type
-    const typeOptions = ['ui', 'page', 'layout'];
-    console.log('\nComponent type:');
-    typeOptions.forEach((type, index) => {
-      console.log(`${index + 1}. ${type}`);
-    });
-    
-    const typeChoice = await prompt(`Select type (1-${typeOptions.length}): `);
-    const type = typeOptions[parseInt(typeChoice) - 1] || 'ui';
-    
-    // Styles
-    const withStyles = (await prompt('Include styles? (y/n): ')).toLowerCase() === 'y';
-    
-    // Tests
-    const withTests = (await prompt('Include tests? (y/n): ')).toLowerCase() === 'y';
-    
-    // Generate paths
-    const componentDir = path.join(
-      __dirname, 
-      '../../',
-      type === 'ui' ? 'packages/ui/src/components' : `apps/web/src/components/${type}`,
-      componentName
-    );
-    
-    // Create directory
-    fs.mkdirSync(componentDir, { recursive: true });
-    
-    // Generate component file
-    const componentContent = `import React from 'react';
-${withStyles ? `import styles from './${componentName}.module.css';` : ''}
+  ]);
 
-export interface ${componentName}Props {
+  // Generate component files based on response
+  const componentDir = path.join(
+    __dirname, 
+    '../../',
+    response.type === 'ui' ? 'packages/ui/src/components' : 'apps/web/src/components',
+    response.name
+  );
+
+  fs.mkdirSync(componentDir, { recursive: true });
+
+  // Generate component file
+  const componentContent = `import React from 'react';
+${response.withStyles ? `import styles from './${response.name}.module.css';` : ''}
+
+export interface ${response.name}Props {
   children?: React.ReactNode;
 }
 
-export const ${componentName} = ({ children }: ${componentName}Props) => {
+export const ${response.name} = ({ children }: ${response.name}Props) => {
   return (
-    <div${withStyles ? ` className={styles.container}` : ''}>
+    <div${response.withStyles ? ` className={styles.container}` : ''}>
       {children}
     </div>
   );
 };
 `;
 
+  fs.writeFileSync(
+    path.join(componentDir, `${response.name}.tsx`),
+    componentContent
+  );
+
+  // Generate styles if needed
+  if (response.withStyles) {
     fs.writeFileSync(
-      path.join(componentDir, `${componentName}.tsx`),
-      componentContent
+      path.join(componentDir, `${response.name}.module.css`),
+      `.container {\n  /* Add styles here */\n}\n`
     );
+  }
 
-    // Generate styles if needed
-    if (withStyles) {
-      fs.writeFileSync(
-        path.join(componentDir, `${componentName}.module.css`),
-        `.container {\n  /* Add styles here */\n}\n`
-      );
-    }
+  // Generate test if needed
+  if (response.withTests) {
+    const testContent = `import { render, screen } from '@testing-library/react';
+import { ${response.name} } from './${response.name}';
 
-    // Generate test if needed
-    if (withTests) {
-      const testContent = `import { render, screen } from '@testing-library/react';
-import { ${componentName} } from './${componentName}';
-
-describe('${componentName}', () => {
+describe('${response.name}', () => {
   it('renders correctly', () => {
-    render(<${componentName}>Test</${componentName}>);
+    render(<${response.name}>Test</${response.name}>);
     expect(screen.getByText('Test')).toBeInTheDocument();
   });
 });
 `;
-      fs.writeFileSync(
-        path.join(componentDir, `${componentName}.test.tsx`),
-        testContent
-      );
-    }
-
-    // Generate index file for exporting
     fs.writeFileSync(
-      path.join(componentDir, 'index.ts'),
-      `export * from './${componentName}';\n`
+      path.join(componentDir, `${response.name}.test.tsx`),
+      testContent
     );
-
-    console.log(`\n✅ Generated ${componentName} component in ${componentDir}`);
-  } catch (error) {
-    console.error('Error generating component:', error);
-  } finally {
-    rl.close();
   }
+
+  // Generate index file for exporting
+  fs.writeFileSync(
+    path.join(componentDir, 'index.ts'),
+    `export * from './${response.name}';\n`
+  );
+
+  console.log(`✅ Generated ${response.name} component`);
 }
 
-generateComponent();
+generateComponent().catch(console.error);

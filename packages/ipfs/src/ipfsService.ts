@@ -1,6 +1,7 @@
 
 import axios from 'axios';
 import FormData from 'form-data';
+import fs from 'fs';
 import { Readable } from 'stream';
 
 export interface IPFSUploadOptions {
@@ -45,19 +46,22 @@ export class IPFSService {
 
   /**
    * Upload a file to IPFS
-   * @param file File data as buffer or stream
+   * @param file File path or Buffer/ReadableStream
    * @param options Upload options
    * @returns Upload response with IPFS hash
    */
   async uploadFile(
-    file: Buffer | Readable,
+    file: string | Buffer | Readable,
     options: IPFSUploadOptions = {}
   ): Promise<IPFSUploadResponse> {
     try {
       const formData = new FormData();
       
       // Add file to form data
-      if (Buffer.isBuffer(file)) {
+      if (typeof file === 'string') {
+        // File path
+        formData.append('file', fs.createReadStream(file));
+      } else if (Buffer.isBuffer(file)) {
         // Buffer
         formData.append('file', file, { filename: options.name || 'file' });
       } else {

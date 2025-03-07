@@ -1,78 +1,99 @@
-# Monniverse Lagoon
 
-A decentralized task platform for the Monniverse ecosystem.
+# Project Monorepo
 
-## Features
+This monorepo contains all the code for our blockchain-based application.
 
-- Connect with Web3 wallet (MetaMask)
-- Create and manage quests
-- Assign and complete quests
-- Earn MONNI tokens for completing quests
-- Real-time notifications via Gmail
+## Tech Stack
+
+- **Frontend**: Next.js, React, Tailwind CSS
+- **Backend**: Express, Node.js
+- **Blockchain**: Hardhat, Ethers.js, Solidity
+- **Storage**: IPFS via Pinata
+- **Tooling**: Turborepo, PNPM, TypeScript, ESLint, Prettier
+
+## Prerequisites
+
+- Node.js (v18 or higher)
+- PNPM (v8.15.4 or higher)
+- Git
+
+## Getting Started
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/your-username/project-monorepo.git
+cd project-monorepo
+
+# Install dependencies
+pnpm install
+```
+
+### Environment Setup
+
+Copy the example environment file and fill in your values:
+
+```bash
+cp .env.example .env
+```
+
+Required environment variables:
+
+- `NEXT_PUBLIC_API_URL`: URL for the backend API
+- `NEXT_PUBLIC_CONTRACT_ADDRESS`: Deployed contract address
+- `PINATA_JWT`: JWT for Pinata IPFS API
+- `PRIVATE_KEY`: Private key for contract deployment (only for deployment)
+
+### Development
+
+```bash
+# Start development servers
+pnpm dev
+
+# Build all packages
+pnpm build
+
+# Run tests
+pnpm test
+
+# Lint code
+pnpm lint
+```
+
+## Available Scripts
+
+- `pnpm dev`: Start all applications in development mode
+- `pnpm build`: Build all packages
+- `pnpm lint`: Run ESLint on all packages
+- `pnpm test`: Run tests for all packages
+- `pnpm typecheck`: Run TypeScript type checking
+- `pnpm clean`: Clean build artifacts
+- `pnpm create:component`: Create a new component
+- `pnpm create:package`: Create a new package
+- `pnpm generate:sdk`: Generate contract SDK from artifacts
 
 ## Project Structure
 
 ```
-frontend/
-  ├── src/
-  │   ├── app/              # Next.js app router
-  │   │   ├── layout/      # Layout components
-  │   │   ├── tasks/       # Task-related components
-  │   │   ├── wallet/      # Wallet connection components
-  │   │   └── ui/          # Reusable UI components
-  │   ├── contexts/        # React contexts
-  │   ├── hooks/           # Custom React hooks
-  │   ├── lib/             # Library code
-  │   ├── services/        # External service integrations
-  │   ├── types/           # TypeScript type definitions
-  │   └── utils/           # Utility functions
-  ├── public/             # Static assets
-  └── package.json        # Project dependencies
+/
+├── apps/
+│   ├── web/                  # Next.js frontend application
+│   └── api/                  # Backend API service
+├── packages/
+│   ├── blockchain/           # Smart contract development & interactions
+│   ├── ui/                   # Shared UI components
+│   ├── config/               # Shared configurations
+│   ├── tsconfig/             # Shared TypeScript configurations
+│   ├── eslint-config/        # Shared ESLint configurations
+│   ├── ipfs/                 # IPFS integration utilities
+│   └── contracts-sdk/        # Auto-generated contract SDK
+├── tooling/
+│   ├── generators/           # Code generators
+│   ├── scripts/              # Utility scripts
+│   └── ci/                   # CI/CD configuration
 ```
-
-## Getting Started
-
-1. Install dependencies:
-```bash
-cd frontend
-npm install
-```
-
-2. Set up environment variables:
-```bash
-cp .env.example .env.local
-```
-
-3. Start the development server:
-```bash
-npm run dev
-```
-
-4. Open [http://localhost:3000](http://localhost:3000) in your browser.
-
-## Smart Contract Integration
-
-1. Start the Hardhat node:
-```bash
-cd hardhat-project
-npx hardhat node
-```
-
-2. Deploy the contract:
-```bash
-npx hardhat run scripts/deploy.js --network localhost
-```
-
-3. Update the contract address in your `.env.local` file.
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the LICENSE file for details.
