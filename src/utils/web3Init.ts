@@ -1,14 +1,8 @@
-// This file runs before anything else to initialize web3 related polyfills
+// Initialize web3 environment polyfills
 import { Buffer } from 'buffer';
 
 if (typeof window !== 'undefined') {
-  // Polyfill Buffer for the browser
   window.Buffer = window.Buffer || Buffer;
-
-  // Add any other required polyfills here
-  if (!window.process) {
-    window.process = { env: {} } as any;
-  }
 }
 
 export {};

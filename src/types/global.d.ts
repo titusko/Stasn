@@ -3,10 +3,13 @@ interface Window {
   ethereum?: {
     isMetaMask?: boolean;
     request: (args: { method: string; params?: any[] }) => Promise<any>;
-    on: (event: string, callback: (...args: any[]) => void) => void;
-    removeListener: (event: string, callback: (...args: any[]) => void) => void;
+    on: (eventName: string, callback: (...args: any[]) => void) => void;
+    removeListener: (eventName: string, callback: (...args: any[]) => void) => void;
+    removeAllListeners: (eventName?: string) => void;
     selectedAddress?: string;
-    isConnected: () => boolean;
+    isConnected?: () => boolean;
     chainId?: string;
   };
 }
+
+export {};

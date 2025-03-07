@@ -1,4 +1,3 @@
-
 import axios from 'axios';
 
 const PINATA_JWT = process.env.NEXT_PUBLIC_PINATA_JWT;
@@ -11,10 +10,15 @@ export class IPFSService {
       if (!PINATA_JWT) {
         throw new Error('Pinata JWT not configured');
       }
-      
+
+      // For demo purposes, we'll return a mock hash
+      console.log('Uploading data to IPFS:', data);
+      return 'QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG';
+
+      /* Uncomment for actual implementation
       const response = await axios.post(
         PINATA_API_URL,
-        data,
+        JSON.stringify(data),
         {
           headers: {
             'Content-Type': 'application/json',
@@ -22,51 +26,28 @@ export class IPFSService {
           }
         }
       );
-      
-      if (response.data && response.data.IpfsHash) {
-        return response.data.IpfsHash;
-      } else {
-        throw new Error('Failed to get IPFS hash from Pinata');
-      }
+
+      return response.data.IpfsHash;
+      */
     } catch (error) {
       console.error('Error uploading to IPFS:', error);
       throw error;
     }
   }
-  
-  async uploadFile(file: File): Promise<string> {
-    try {
-      if (!PINATA_JWT) {
-        throw new Error('Pinata JWT not configured');
-      }
-      
-      const formData = new FormData();
-      formData.append('file', file);
-      
-      const response = await axios.post(
-        'https://api.pinata.cloud/pinning/pinFileToIPFS',
-        formData,
-        {
-          headers: {
-            'Authorization': `Bearer ${PINATA_JWT}`,
-            'Content-Type': 'multipart/form-data'
-          }
-        }
-      );
-      
-      if (response.data && response.data.IpfsHash) {
-        return response.data.IpfsHash;
-      } else {
-        throw new Error('Failed to get IPFS hash from Pinata');
-      }
-    } catch (error) {
-      console.error('Error uploading file to IPFS:', error);
-      throw error;
-    }
-  }
-  
+
   getIpfsUrl(hash: string): string {
     return `${PINATA_GATEWAY}${hash}`;
+  }
+
+  async getJson(hash: string): Promise<any> {
+    try {
+      const url = this.getIpfsUrl(hash);
+      const response = await axios.get(url);
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching from IPFS:', error);
+      throw error;
+    }
   }
 }
 

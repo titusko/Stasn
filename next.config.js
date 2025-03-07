@@ -17,12 +17,15 @@ const nextConfig = {
       path: require.resolve('path-browserify'),
       buffer: require.resolve('buffer/')
     };
+    
+    config.experiments = {
+      ...config.experiments,
+      topLevelAwait: true,
+    };
+    
     return config;
   },
-  swcMinify: true,
-  compiler: {
-    styledComponents: true,
-  }
+  swcMinify: true
 };
 
 module.exports = nextConfig;

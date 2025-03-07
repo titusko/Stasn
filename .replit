@@ -1,7 +1,7 @@
 modules = ["nodejs-20"]
 
 [workflows]
-runButton = "Dev"
+runButton = "NextJS Dev"
 
 [[workflows.workflow]]
 name = "Next.js"
@@ -13,6 +13,14 @@ args = "npm run dev"
 
 [[workflows.workflow]]
 name = "Dev"
+author = 40254818
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev"
+
+[[workflows.workflow]]
+name = "NextJS Dev"
 author = 40254818
 
 [[workflows.workflow.tasks]]

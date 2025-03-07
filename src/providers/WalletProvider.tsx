@@ -1,43 +1,49 @@
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { ethers } from 'ethers';
 
 interface WalletContextType {
   address: string | null;
-  isConnected: boolean;
   connect: () => Promise<void>;
   disconnect: () => void;
+  isConnected: boolean;
 }
 
 const WalletContext = createContext<WalletContextType>({
   address: null,
-  isConnected: false,
   connect: async () => {},
-  disconnect: () => {}
+  disconnect: () => {},
+  isConnected: false,
 });
 
 export const useWallet = () => useContext(WalletContext);
 
-export const WalletProvider: React.FC<{children: React.ReactNode}> = ({ children }) => {
+interface WalletProviderProps {
+  children: ReactNode;
+}
+
+export const WalletProvider = ({ children }: WalletProviderProps) => {
   const [address, setAddress] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
 
   useEffect(() => {
-    const checkConnection = async () => {
-      if (typeof window !== 'undefined' && window.ethereum) {
-        try {
-          const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-          if (accounts && accounts.length > 0) {
-            setAddress(accounts[0]);
-            setIsConnected(true);
-          }
-        } catch (error) {
-          console.error('Error checking wallet connection:', error);
+    const checkIfConnected = async () => {
+      if (typeof window === 'undefined' || !window.ethereum) return;
+      
+      try {
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+        if (accounts && accounts.length > 0) {
+          setAddress(accounts[0]);
+          setIsConnected(true);
         }
+      } catch (error) {
+        console.error('Failed to get accounts:', error);
       }
     };
 
-    checkConnection();
+    checkIfConnected();
 
+    // Listen for account changes
     const handleAccountsChanged = (accounts: string[]) => {
       if (accounts.length === 0) {
         setAddress(null);
@@ -53,25 +59,26 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({ children
     }
 
     return () => {
-      if (window.ethereum) {
+      if (window.ethereum && window.ethereum.removeListener) {
         window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
       }
     };
   }, []);
 
   const connect = async () => {
-    if (typeof window !== 'undefined' && window.ethereum) {
-      try {
-        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        if (accounts && accounts.length > 0) {
-          setAddress(accounts[0]);
-          setIsConnected(true);
-        }
-      } catch (error) {
-        console.error('Error connecting wallet:', error);
+    if (!window.ethereum) {
+      alert('Please install MetaMask to use this application');
+      return;
+    }
+
+    try {
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      if (accounts && accounts.length > 0) {
+        setAddress(accounts[0]);
+        setIsConnected(true);
       }
-    } else {
-      window.alert('Please install MetaMask or another Ethereum wallet.');
+    } catch (error) {
+      console.error('Failed to connect wallet:', error);
     }
   };
 
@@ -81,7 +88,7 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({ children
   };
 
   return (
-    <WalletContext.Provider value={{ address, isConnected, connect, disconnect }}>
+    <WalletContext.Provider value={{ address, connect, disconnect, isConnected }}>
       {children}
     </WalletContext.Provider>
   );
