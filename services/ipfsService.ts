@@ -1,104 +1,51 @@
-
-import axios from 'axios';
+import { createIPFSService } from '@web3-task/ipfs';
 
 const PINATA_JWT = process.env.NEXT_PUBLIC_PINATA_JWT || '';
 const PINATA_GATEWAY = process.env.NEXT_PUBLIC_PINATA_GATEWAY || 'https://gateway.pinata.cloud';
 
-interface PinataMetadata {
-  name?: string;
-  keyvalues?: Record<string, string>;
-}
-
-interface PinataOptions {
-  cidVersion?: 0 | 1;
-}
-
-interface IPFSResponse {
-  IpfsHash: string;
-  PinSize: number;
-  Timestamp: string;
-}
-
-const getAuthHeaders = () => {
-  return {
-    Authorization: `Bearer ${PINATA_JWT}`,
-  };
-};
+// Create IPFS service instance using the factory function
+const ipfsClient = createIPFSService(PINATA_JWT, undefined, PINATA_GATEWAY);
 
 /**
  * Upload a file to IPFS via Pinata
  */
-const uploadFile = async (file: File): Promise<IPFSResponse> => {
+const uploadFile = async (file: File) => {
   try {
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const metadata: PinataMetadata = {
-      name: file.name,
-      keyvalues: {
-        size: file.size.toString(),
-        type: file.type,
-      },
-    };
-
-    formData.append('pinataMetadata', JSON.stringify(metadata));
-    
-    const options: PinataOptions = {
-      cidVersion: 1,
-    };
-    
-    formData.append('pinataOptions', JSON.stringify(options));
-
-    const response = await axios.post(
-      'https://api.pinata.cloud/pinning/pinFileToIPFS',
-      formData,
-      {
-        headers: {
-          ...getAuthHeaders(),
-          'Content-Type': 'multipart/form-data',
-        },
+    const response = await ipfsClient.uploadFile(file, {
+      pinataMetadata: {
+        name: file.name,
+        keyvalues: {
+          size: file.size.toString(),
+          type: file.type,
+        }
       }
-    );
+    });
 
-    return response.data;
+    return response;
   } catch (error) {
     console.error('Error uploading file to IPFS:', error);
-    throw new Error(axios.isAxiosError(error) 
-      ? error.response?.data?.error || error.message 
-      : 'Failed to upload file to IPFS');
+    throw error;
   }
 };
 
 /**
  * Upload JSON data to IPFS via Pinata
  */
-const uploadJson = async (jsonData: any): Promise<IPFSResponse> => {
+const uploadJson = async (jsonData: any) => {
   try {
-    const response = await axios.post(
-      'https://api.pinata.cloud/pinning/pinJSONToIPFS',
-      {
-        pinataContent: jsonData,
-        pinataMetadata: {
-          name: 'TaskProof',
-          keyvalues: {
-            timestamp: Date.now().toString(),
-          },
-        },
-      },
-      {
-        headers: {
-          ...getAuthHeaders(),
-          'Content-Type': 'application/json',
-        },
+    const response = await ipfsClient.uploadJSON(jsonData, {
+      pinataMetadata: {
+        name: 'TaskProof',
+        keyvalues: {
+          timestamp: Date.now().toString(),
+        }
       }
-    );
+    });
 
-    return response.data;
+    return response;
   } catch (error) {
     console.error('Error uploading JSON to IPFS:', error);
-    throw new Error(axios.isAxiosError(error)
-      ? error.response?.data?.error || error.message
-      : 'Failed to upload JSON to IPFS');
+    throw error;
   }
 };
 
@@ -107,11 +54,11 @@ const uploadJson = async (jsonData: any): Promise<IPFSResponse> => {
  */
 const getFromIpfs = async (ipfsHash: string) => {
   try {
-    const response = await axios.get(`${PINATA_GATEWAY}/ipfs/${ipfsHash}`);
-    return response.data;
+    const data = await ipfsClient.getContent(ipfsHash);
+    return data;
   } catch (error) {
     console.error('Error getting content from IPFS:', error);
-    throw new Error('Failed to get content from IPFS');
+    throw error;
   }
 };
 

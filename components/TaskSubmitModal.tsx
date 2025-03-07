@@ -1,196 +1,193 @@
 
 import React, { useState, useRef } from 'react';
-import { Dialog } from '@headlessui/react';
+import { Dialog, DialogContent, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Upload, FileIcon, AlertCircle } from "lucide-react";
 import { ipfsService } from '../services/ipfsService';
+import { useContractWrite } from '@/hooks/useContractWrite';
+import { TASK_MANAGER_ADDRESS, TASK_MANAGER_ABI } from '@/constants/contracts';
 
 interface TaskSubmitModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (proofHash: string) => void;
-  taskId: number;
+  onSuccess?: (proofHash: string, taskId: string) => void;
+  taskId: string;
 }
 
-const TaskSubmitModal: React.FC<TaskSubmitModalProps> = ({ isOpen, onClose, onSubmit, taskId }) => {
-  const [proof, setProof] = useState('');
-  const [files, setFiles] = useState<File[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
+export function TaskSubmitModal({ isOpen, onClose, onSuccess, taskId }: TaskSubmitModalProps) {
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { write: submitProof, isLoading: isSubmitting } = useContractWrite({
+    contract: {
+      address: TASK_MANAGER_ADDRESS,
+      abi: TASK_MANAGER_ABI,
+    },
+    method: 'submitProof',
+    onSuccess: (receipt) => {
+      // Handle transaction success
+      const taskId = receipt.events?.find(e => e.event === 'ProofSubmitted')?.args?.taskId;
+      if (onSuccess && proofHash) {
+        onSuccess(proofHash, taskId.toString());
+      }
+      onClose();
+    },
+    onError: (error) => {
+      setError(error.message);
+    },
+  });
+
+  const [proofHash, setProofHash] = useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      setFiles(Array.from(e.target.files));
+      setSelectedFile(e.target.files[0]);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!proof && files.length === 0) return;
+    if (!title || !description) return;
 
     try {
       setIsUploading(true);
       setError(null);
-      setUploadProgress(0);
       
-      let fileHashes: string[] = [];
+      let fileHash = '';
       
-      // Upload files if any
-      if (files.length > 0) {
-        const totalFiles = files.length;
-        
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
-          // Use the actual implementation in ipfsService
-          const result = await ipfsService.uploadFile(file);
-          fileHashes.push(result.IpfsHash);
-          
-          // Update progress
-          setUploadProgress(((i + 1) / totalFiles) * 100);
-        }
+      // Upload file if selected
+      if (selectedFile) {
+        const fileResult = await ipfsService.uploadFile(selectedFile);
+        fileHash = fileResult.IpfsHash;
       }
       
-      // Upload proof data with file references
+      // Upload proof data with file reference
       const proofData = {
         taskId,
-        proof,
-        fileHashes,
+        title,
+        description,
+        fileHash,
         timestamp: Date.now()
       };
       
-      const proofHash = await ipfsService.uploadJson(proofData);
+      const result = await ipfsService.uploadJson(proofData);
+      setProofHash(result.IpfsHash);
       
-      onSubmit(proofHash.IpfsHash);
+      // Submit proof to smart contract
+      await submitProof([taskId, result.IpfsHash]);
       
-      // Reset form
-      setProof('');
-      setFiles([]);
-      setUploadProgress(0);
-      onClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error submitting task proof:', error);
-      setError(error instanceof Error ? error.message : 'Failed to upload files');
+      setError(error.message || 'Failed to upload files');
     } finally {
       setIsUploading(false);
     }
   };
 
-  const removeFile = (index: number) => {
-    setFiles(prev => prev.filter((_, i) => i !== index));
+  const openFileDialog = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
   };
 
   return (
-    <Dialog open={isOpen} onClose={onClose} className="relative z-50">
-      <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
-      <div className="fixed inset-0 flex items-center justify-center p-4">
-        <Dialog.Panel className="w-full max-w-md rounded bg-white p-6">
-          <Dialog.Title className="text-xl font-medium text-gray-900 mb-4">
-            Submit Task Proof
-          </Dialog.Title>
-          
-          <form onSubmit={handleSubmit}>
-            <div className="mb-4">
-              <label htmlFor="proof" className="block text-sm font-medium text-gray-700 mb-1">
-                Proof Description
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogTitle>Submit Task Proof</DialogTitle>
+        
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label htmlFor="title" className="text-sm font-medium">
+                Title
               </label>
-              <textarea
-                id="proof"
-                value={proof}
-                onChange={(e) => setProof(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                rows={4}
-                placeholder="Describe how you completed the task..."
+              <Input
+                id="title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Brief title for your submission"
+                required
               />
             </div>
             
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Attach Files (optional)
+            <div className="space-y-2">
+              <label htmlFor="description" className="text-sm font-medium">
+                Description
+              </label>
+              <Textarea
+                id="description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Describe how you completed the task..."
+                rows={4}
+                required
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium">
+                Attachment (optional)
               </label>
               <input
                 type="file"
                 ref={fileInputRef}
                 onChange={handleFileChange}
-                multiple
                 className="hidden"
               />
-              <div className="flex flex-wrap gap-2 mb-2">
-                <button
+              <div className="flex flex-col gap-2">
+                <Button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+                  variant="outline"
+                  onClick={openFileDialog}
+                  className="flex gap-2 items-center"
                 >
-                  Choose Files
-                </button>
-                {files.length > 0 && (
-                  <span className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
-                    {files.length} file{files.length !== 1 ? 's' : ''} selected
-                  </span>
+                  <Upload size={16} />
+                  Choose File
+                </Button>
+                {selectedFile && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <FileIcon size={16} />
+                    {selectedFile.name}
+                  </div>
                 )}
               </div>
-              
-              {files.length > 0 && (
-                <div className="mt-2 max-h-32 overflow-y-auto">
-                  <ul className="space-y-1">
-                    {files.map((file, index) => (
-                      <li key={index} className="flex items-center justify-between text-sm">
-                        <span className="truncate">{file.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => removeFile(index)}
-                          className="text-red-500 hover:text-red-700 ml-2"
-                        >
-                          ✕
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
             </div>
-            
-            {isUploading && (
-              <div className="mb-4">
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div 
-                    className="bg-blue-600 h-2.5 rounded-full" 
-                    style={{ width: `${uploadProgress}%` }}
-                  ></div>
-                </div>
-                <p className="text-sm text-gray-600 mt-1">
-                  Uploading: {Math.round(uploadProgress)}%
-                </p>
-              </div>
-            )}
             
             {error && (
-              <div className="mb-4 p-2 bg-red-100 border border-red-400 text-red-700 rounded">
-                {error}
-              </div>
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
             )}
-            
-            <div className="flex justify-end gap-2 mt-6">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
-                disabled={isUploading}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isUploading || (!proof && files.length === 0)}
-                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-blue-300"
-              >
-                {isUploading ? 'Uploading...' : 'Submit Proof'}
-              </button>
-            </div>
-          </form>
-        </Dialog.Panel>
-      </div>
+          </div>
+          
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={isUploading || isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={!title || !description || isUploading || isSubmitting}
+            >
+              {isUploading ? 'Uploading...' : isSubmitting ? 'Submitting...' : 'Submit Task'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
     </Dialog>
   );
-};
+}
 
 export default TaskSubmitModal;

@@ -1,93 +1,124 @@
 
 import React, { useState } from 'react';
-import { Dialog } from '@headlessui/react';
+import { Dialog, DialogContent, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertCircle } from "lucide-react";
 import { ipfsService } from '../services/ipfsService';
+import { useContractWrite } from '@/hooks/useContractWrite';
+import { TASK_MANAGER_ADDRESS, TASK_MANAGER_ABI } from '@/constants/contracts';
 
 interface TaskDisputeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (disputeHash: string) => void;
-  taskId: number;
+  onSuccess?: (disputeHash: string, taskId: string) => void;
+  taskId: string;
 }
 
-const TaskDisputeModal: React.FC<TaskDisputeModalProps> = ({ isOpen, onClose, onSubmit, taskId }) => {
+export function TaskDisputeModal({ isOpen, onClose, onSuccess, taskId }: TaskDisputeModalProps) {
   const [reason, setReason] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const { write: submitDispute, isLoading: isSubmitting } = useContractWrite({
+    contract: {
+      address: TASK_MANAGER_ADDRESS,
+      abi: TASK_MANAGER_ABI,
+    },
+    method: 'disputeTask',
+    onSuccess: (receipt) => {
+      // Handle transaction success
+      if (onSuccess && disputeHash) {
+        onSuccess(disputeHash, taskId);
+      }
+      onClose();
+    },
+    onError: (error) => {
+      setError(error.message);
+    },
+  });
+
+  const [disputeHash, setDisputeHash] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reason) {
-      alert('Please provide a reason for disputing');
+      setError('Please provide a reason for disputing');
       return;
     }
 
     try {
-      setIsSubmitting(true);
-      const jsonData = { 
-        reason, 
+      setError(null);
+      
+      // Upload dispute data
+      const disputeData = {
         taskId,
-        timestamp: new Date().toISOString()
+        reason,
+        timestamp: Date.now()
       };
       
-      const disputeHash = await ipfsService.uploadJson(jsonData);
-      onSubmit(disputeHash);
-      onClose();
-    } catch (error) {
+      const result = await ipfsService.uploadJson(disputeData);
+      setDisputeHash(result.IpfsHash);
+      
+      // Submit dispute to smart contract
+      await submitDispute([taskId, result.IpfsHash]);
+      
+    } catch (error: any) {
       console.error('Error submitting dispute:', error);
-      alert('Failed to submit dispute. Please try again.');
-    } finally {
-      setIsSubmitting(false);
+      setError(error.message || 'Failed to submit dispute');
     }
   };
 
   return (
-    <Dialog 
-      open={isOpen} 
-      onClose={onClose}
-      className="relative z-50"
-    >
-      <div className="fixed inset-0 bg-black/30" aria-hidden="true" />
-      
-      <div className="fixed inset-0 flex items-center justify-center p-4">
-        <Dialog.Panel className="w-full max-w-md rounded bg-white p-6 shadow-xl">
-          <Dialog.Title className="text-lg font-medium text-gray-900">Dispute Task</Dialog.Title>
-          
-          <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogTitle>Dispute Task</DialogTitle>
+        
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <label htmlFor="reason" className="text-sm font-medium">
                 Reason for Dispute
               </label>
-              <textarea
+              <Textarea
+                id="reason"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
+                placeholder="Explain why you are disputing this task..."
                 rows={4}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                placeholder="Explain why you're disputing this task..."
                 required
               />
             </div>
             
-            <div className="flex justify-end space-x-3 pt-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="rounded-md border border-transparent bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50"
-              >
-                {isSubmitting ? 'Submitting...' : 'Submit Dispute'}
-              </button>
-            </div>
-          </form>
-        </Dialog.Panel>
-      </div>
+            {error && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={!reason || isSubmitting}
+              variant="destructive"
+            >
+              {isSubmitting ? 'Submitting...' : 'Submit Dispute'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
     </Dialog>
   );
-};
+}
 
 export default TaskDisputeModal;
