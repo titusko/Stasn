@@ -1,0 +1,765 @@
+# Web3 Task Platform - Complete Project Architecture
+
+## Project Overview
+A decentralized task platform inspired by Layer3 that allows users to create, take on, and complete tasks with crypto rewards. The platform integrates with Web3 wallets and Gmail for notifications.
+
+## Technology Stack
+- **Frontend**: Next.js, React, TypeScript, Tailwind CSS
+- **Backend**: Node.js, Express, TypeScript
+- **Blockchain**: Solidity smart contracts, Hardhat, Ethers.js
+- **Database**: PostgreSQL with Prisma ORM
+- **Authentication**: Web3 wallet integration, JWT for API
+- **Storage**: IPFS for decentralized file storage
+- **Integrations**: Gmail API, various Web3 wallets
+
+## Project Structure
+
+```
+web3-task-platform/
+├── frontend/                      # Next.js frontend application
+│   ├── public/                    # Static assets
+│   ├── src/
+│   │   ├── components/            # React components
+│   │   │   ├── layout/            # Layout components
+│   │   │   ├── tasks/             # Task-related components
+│   │   │   ├── wallet/            # Wallet integration components
+│   │   │   └── ui/                # UI components
+│   │   ├── contexts/              # React contexts
+│   │   ├── hooks/                 # Custom React hooks
+│   │   ├── lib/                   # Utility libraries
+│   │   ├── pages/                 # Next.js pages
+│   │   ├── services/              # API and integration services
+│   │   ├── styles/                # CSS and styling
+│   │   ├── types/                 # TypeScript type definitions
+│   │   └── utils/                 # Utility functions
+│   ├── .env.local                 # Environment variables
+│   ├── next.config.js             # Next.js configuration
+│   ├── tailwind.config.js         # Tailwind CSS configuration
+│   └── tsconfig.json              # TypeScript configuration
+├── backend/                       # Node.js backend server
+│   ├── src/
+│   │   ├── config/                # Configuration files
+│   │   ├── controllers/           # API controllers
+│   │   ├── middlewares/           # Express middlewares
+│   │   ├── models/                # Database models
+│   │   ├── routes/                # API routes
+│   │   ├── services/              # Business logic services
+│   │   ├── types/                 # TypeScript type definitions
+│   │   ├── utils/                 # Utility functions
+│   │   └── index.ts               # Main application entry point
+│   ├── .env                       # Environment variables
+│   ├── prisma/                    # Prisma ORM schema and migrations
+│   └── tsconfig.json              # TypeScript configuration
+├── blockchain/                    # Blockchain contracts and scripts
+│   ├── contracts/                 # Solidity smart contracts
+│   ├── scripts/                   # Deployment scripts
+│   ├── test/                      # Contract tests
+│   ├── .env                       # Environment variables
+│   ├── hardhat.config.js          # Hardhat configuration
+│   └── package.json               # Package dependencies
+└── package.json                   # Root package.json for workspaces
+```
+
+## Required Dependencies
+
+### Frontend Dependencies
+```json
+{
+  "dependencies": {
+    "@headlessui/react": "^1.7.14",
+    "@heroicons/react": "^2.0.18",
+    "@tailwindcss/forms": "^0.5.3",
+    "axios": "^1.4.0",
+    "date-fns": "^2.30.0",
+    "ethers": "^5.7.2",
+    "ipfs-http-client": "^60.0.0",
+    "jwt-decode": "^3.1.2",
+    "next": "^13.4.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-hot-toast": "^2.4.0",
+    "react-query": "^3.39.3",
+    "web3modal": "^1.9.12"
+  },
+  "devDependencies": {
+    "@types/node": "^18.16.3",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.1",
+    "autoprefixer": "^10.4.14",
+    "postcss": "^8.4.23",
+    "tailwindcss": "^3.3.2",
+    "typescript": "^5.0.4"
+  }
+}
+```
+
+### Backend Dependencies
+```json
+{
+  "dependencies": {
+    "@prisma/client": "^4.15.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+    "express-validator": "^7.0.1",
+    "google-auth-library": "^8.8.0",
+    "googleapis": "^118.0.0",
+    "helmet": "^7.0.0",
+    "jsonwebtoken": "^9.0.0",
+    "morgan": "^1.10.0",
+    "nodemailer": "^6.9.2",
+    "winston": "^3.8.2"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.13",
+    "@types/express": "^4.17.17",
+    "@types/jsonwebtoken": "^9.0.2",
+    "@types/morgan": "^1.9.4",
+    "@types/node": "^20.2.3",
+    "@types/nodemailer": "^6.4.7",
+    "nodemon": "^2.0.22",
+    "prisma": "^4.15.0",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.4"
+  }
+}
+```
+
+### Blockchain Dependencies
+```json
+{
+  "dependencies": {
+    "@openzeppelin/contracts": "^4.9.0",
+    "dotenv": "^16.0.3",
+    "ethers": "^5.7.2"
+  },
+  "devDependencies": {
+    "@nomiclabs/hardhat-ethers": "^2.2.3",
+    "@nomiclabs/hardhat-waffle": "^2.0.5",
+    "chai": "^4.3.7",
+    "ethereum-waffle": "^4.0.10",
+    "hardhat": "^2.14.0",
+    "hardhat-gas-reporter": "^1.0.9",
+    "solidity-coverage": "^0.8.2",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.4"
+  }
+}
+```
+
+## Implementation Details
+
+### Smart Contracts
+
+#### 1. TaskToken.sol
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.17;
+
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+contract TaskToken is ERC20, Ownable {
+    uint256 public constant MAX_SUPPLY = 1000000000 * 10**18; // 1 billion tokens
+    
+    constructor() ERC20("Task Token", "TASK") {
+        // Mint initial supply to contract creator
+        _mint(msg.sender, 10000000 * 10**18); // 10 million tokens initially
+    }
+    
+    function mint(address to, uint256 amount) external onlyOwner {
+        require(totalSupply() + amount <= MAX_SUPPLY, "Max supply exceeded");
+        _mint(to, amount);
+    }
+}
+```
+
+#### 2. TaskManager.sol
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.17;
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+
+contract TaskManager is Ownable, ReentrancyGuard {
+    IERC20 public taskToken;
+    
+    uint256 public taskCount;
+    uint256 public disputeFeePercentage = 5; // 5% dispute fee
+    address public treasuryAddress;
+    
+    enum TaskStatus {
+        Open,
+        InProgress,
+        Completed,
+        Verified,
+        Disputed,
+        Cancelled
+    }
+    
+    struct Task {
+        uint256 id;
+        string title;
+        uint256 reward;
+        address creator;
+        address worker;
+        TaskStatus status;
+        uint256 deadline;
+        string metadataURI;
+        string submissionURI;
+        string disputeReason;
+        uint256 createdAt;
+    }
+    
+    mapping(uint256 => Task) public tasks;
+    mapping(address => uint256[]) public userCreatedTasks;
+    mapping(address => uint256[]) public userWorkingTasks;
+    
+    // Events
+    event TaskCreated(uint256 indexed taskId, address indexed creator, uint256 reward);
+    event TaskTaken(uint256 indexed taskId, address indexed worker);
+    event TaskCompleted(uint256 indexed taskId, address indexed worker, string submissionURI);
+    event TaskVerified(uint256 indexed taskId, address indexed creator);
+    event TaskDisputed(uint256 indexed taskId, address indexed disputer, string reason);
+    event DisputeResolved(uint256 indexed taskId, bool resolvedInFavorOfWorker);
+    event TaskCancelled(uint256 indexed taskId, address indexed creator);
+    
+    constructor(address _taskToken, address _treasury) {
+        taskToken = IERC20(_taskToken);
+        treasuryAddress = _treasury;
+        taskCount = 0;
+    }
+    
+    function setTreasuryAddress(address _treasury) external onlyOwner {
+        treasuryAddress = _treasury;
+    }
+    
+    function setDisputeFeePercentage(uint256 _percentage) external onlyOwner {
+        require(_percentage <= 20, "Dispute fee too high");
+        disputeFeePercentage = _percentage;
+    }
+    
+    function createTask(
+        string memory _title,
+        uint256 _reward,
+        uint256 _deadline,
+        string memory _metadataURI
+    ) external nonReentrant returns (uint256) {
+        require(_reward > 0, "Reward must be greater than 0");
+        require(_deadline > block.timestamp, "Deadline must be in the future");
+        
+        // Transfer tokens from creator to contract
+        bool success = taskToken.transferFrom(msg.sender, address(this), _reward);
+        require(success, "Token transfer failed");
+        
+        taskCount++;
+        
+        tasks[taskCount] = Task({
+            id: taskCount,
+            title: _title,
+            reward: _reward,
+            creator: msg.sender,
+            worker: address(0),
+            status: TaskStatus.Open,
+            deadline: _deadline,
+            metadataURI: _metadataURI,
+            submissionURI: "",
+            disputeReason: "",
+            createdAt: block.timestamp
+        });
+        
+        userCreatedTasks[msg.sender].push(taskCount);
+        
+        emit TaskCreated(taskCount, msg.sender, _reward);
+        
+        return taskCount;
+    }
+    
+    function takeTask(uint256 _taskId) external nonReentrant {
+        Task storage task = tasks[_taskId];
+        
+        require(task.id != 0, "Task does not exist");
+        require(task.status == TaskStatus.Open, "Task is not open");
+        require(block.timestamp < task.deadline, "Task deadline has passed");
+        require(task.creator != msg.sender, "Creator cannot take their own task");
+        
+        task.worker = msg.sender;
+        task.status = TaskStatus.InProgress;
+        
+        userWorkingTasks[msg.sender].push(_taskId);
+        
+        emit TaskTaken(_taskId, msg.sender);
+    }
+    
+    function submitTaskCompletion(uint256 _taskId, string memory _submissionURI) external nonReentrant {
+        Task storage task = tasks[_taskId];
+        
+        require(task.id != 0, "Task does not exist");
+        require(task.status == TaskStatus.InProgress, "Task is not in progress");
+        require(task.worker == msg.sender, "Only assigned worker can submit");
+        
+        task.submissionURI = _submissionURI;
+        task.status = TaskStatus.Completed;
+        
+        emit TaskCompleted(_taskId, msg.sender, _submissionURI);
+    }
+    
+    function verifyTaskCompletion(uint256 _taskId) external nonReentrant {
+        Task storage task = tasks[_taskId];
+        
+        require(task.id != 0, "Task does not exist");
+        require(task.status == TaskStatus.Completed, "Task is not completed");
+        require(task.creator == msg.sender, "Only creator can verify");
+        
+        task.status = TaskStatus.Verified;
+        
+        // Transfer reward to worker
+        bool success = taskToken.transfer(task.worker, task.reward);
+        require(success, "Token transfer failed");
+        
+        emit TaskVerified(_taskId, msg.sender);
+    }
+    
+    function createDispute(uint256 _taskId, string memory _reason) external nonReentrant {
+        Task storage task = tasks[_taskId];
+        
+        require(task.id != 0, "Task does not exist");
+        require(task.status == TaskStatus.Completed, "Task is not completed");
+        require(task.creator == msg.sender, "Only creator can dispute");
+        require(bytes(_reason).length > 0, "Reason cannot be empty");
+        
+        task.status = TaskStatus.Disputed;
+        task.disputeReason = _reason;
+        
+        emit TaskDisputed(_taskId, msg.sender, _reason);
+    }
+    
+    function resolveDispute(uint256 _taskId, bool _resolveInFavorOfWorker) external onlyOwner nonReentrant {
+        Task storage task = tasks[_taskId];
+        
+        require(task.id != 0, "Task does not exist");
+        require(task.status == TaskStatus.Disputed, "Task is not disputed");
+        
+        task.status = TaskStatus.Verified;
+        
+        if (_resolveInFavorOfWorker) {
+            // Calculate fee
+            uint256 fee = (task.reward * disputeFeePercentage) / 100;
+            uint256 workerReward = task.reward - fee;
+            
+            // Transfer reward to worker minus fee
+            bool success1 = taskToken.transfer(task.worker, workerReward);
+            require(success1, "Worker token transfer failed");
+            
+            // Transfer fee to treasury
+            if (fee > 0) {
+                bool success2 = taskToken.transfer(treasuryAddress, fee);
+                require(success2, "Fee token transfer failed");
+            }
+        } else {
+            // Return funds to creator
+            bool success = taskToken.transfer(task.creator, task.reward);
+            require(success, "Token transfer failed");
+        }
+        
+        emit DisputeResolved(_taskId, _resolveInFavorOfWorker);
+    }
+    
+    function cancelTask(uint256 _taskId) external nonReentrant {
+        Task storage task = tasks[_taskId];
+        
+        require(task.id != 0, "Task does not exist");
+        require(task.status == TaskStatus.Open, "Task is not open");
+        require(task.creator == msg.sender, "Only creator can cancel");
+        
+        task.status = TaskStatus.Cancelled;
+        
+        // Return funds to creator
+        bool success = taskToken.transfer(task.creator, task.reward);
+        require(success, "Token transfer failed");
+        
+        emit TaskCancelled(_taskId, msg.sender);
+    }
+    
+    // View functions
+    function getTask(uint256 _taskId) external view returns (Task memory) {
+        require(tasks[_taskId].id != 0, "Task does not exist");
+        return tasks[_taskId];
+    }
+    
+    function getUserCreatedTasks(address _user) external view returns (uint256[] memory) {
+        return userCreatedTasks[_user];
+    }
+    
+    function getUserWorkingTasks(address _user) external view returns (uint256[] memory) {
+        return userWorkingTasks[_user];
+    }
+    
+    function getTaskCount() external view returns (uint256) {
+        return taskCount;
+    }
+}
+```
+
+### Frontend Implementation
+
+#### 1. Main Layout Component
+
+```typescript
+// src/components/layout/MainLayout.tsx
+import React, { ReactNode, useEffect } from 'react';
+import { useRouter } from 'next/router';
+import Sidebar from './Sidebar';
+import Navbar from './Navbar';
+import { useWallet } from '../../hooks/useWallet';
+import { ToastContainer } from 'react-hot-toast';
+
+interface MainLayoutProps {
+  children: ReactNode;
+}
+
+export default function MainLayout({ children }: MainLayoutProps) {
+  const { address, isConnected } = useWallet();
+  const router = useRouter();
+  
+  // Redirect to connect wallet if not connected
+  useEffect(() => {
+    if (!isConnected && router.pathname !== '/' && !router.pathname.includes('/connect')) {
+      router.push('/connect');
+    }
+  }, [isConnected, router]);
+  
+  return (
+    <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
+      <Sidebar />
+      <div className="flex flex-col flex-1 overflow-hidden">
+        <Navbar />
+        <main className="flex-1 overflow-y-auto p-4 md:p-6">
+          {children}
+        </main>
+      </div>
+      <ToastContainer />
+    </div>
+  );
+}
+```
+
+#### 2. Wallet Connection Component
+
+```typescript
+// src/components/wallet/WalletConnector.tsx
+import React, { useState } from 'react';
+import { useWallet } from '../../hooks/useWallet';
+import { truncateAddress } from '../../utils/address';
+import { ChevronDownIcon, WalletIcon } from '@heroicons/react/24/outline';
+import { Menu, Transition } from '@headlessui/react';
+
+export default function WalletConnector() {
+  const { address, isConnected, connect, disconnect, balance } = useWallet();
+  const [isConnecting, setIsConnecting] = useState(false);
+  
+  const handleConnect = async () => {
+    try {
+      setIsConnecting(true);
+      await connect();
+    } catch (error) {
+      console.error("Failed to connect wallet:", error);
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+  
+  if (!isConnected) {
+    return (
+      <button
+        onClick={handleConnect}
+        disabled={isConnecting}
+        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+      >
+        {isConnecting ? (
+          <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        ) : (
+          <WalletIcon className="h-5 w-5 mr-2" />
+        )}
+        Connect Wallet
+      </button>
+    );
+  }
+  
+  return (
+    <Menu as="div" className="relative inline-block text-left">
+      <div>
+        <Menu.Button className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+          <WalletIcon className="h-5 w-5 mr-2 text-gray-500 dark:text-gray-400" />
+          <span>{truncateAddress(address)}</span>
+          <ChevronDownIcon className="ml-2 h-5 w-5" />
+        </Menu.Button>
+      </div>
+      
+      <Transition
+        enter="transition ease-out duration-100"
+        enterFrom="transform opacity-0 scale-95"
+        enterTo="transform opacity-100 scale-100"
+        leave="transition ease-in duration-75"
+        leaveFrom="transform opacity-100 scale-100"
+        leaveTo="transform opacity-0 scale-95"
+      >
+        <Menu.Items className="absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white dark:bg-gray-800 ring-1 ring-black ring-opacity-5 focus:outline-none">
+          <div className="py-1">
+            <div className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">
+              <p className="font-medium">Balance</p>
+              <p className="mt-1">{balance} TASK</p>
+            </div>
+            
+            <hr className="my-1 border-gray-200 dark:border-gray-700" />
+            
+            <Menu.Item>
+              {({ active }) => (
+                <button
+                  onClick={disconnect}
+                  className={`${
+                    active ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300'
+                  } group flex items-center w-full px-4 py-2 text-sm`}
+                >
+                  Disconnect
+                </button>
+              )}
+            </Menu.Item>
+          </div>
+        </Menu.Items>
+      </Transition>
+    </Menu>
+  );
+}
+```
+
+#### 3. Dashboard Page
+
+```typescript
+// src/pages/dashboard.tsx
+import React, { useState, useEffect } from 'react';
+import MainLayout from '../components/layout/MainLayout';
+import TaskList from '../components/tasks/TaskList';
+import CreateTaskButton from '../components/tasks/CreateTaskButton';
+import { useWallet } from '../hooks/useWallet';
+import { getAllTasks, getUserCreatedTasks, getUserAssignedTasks } from '../services/contractService';
+import { Task, TaskStatus } from '../types/task';
+import { PlusIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import StatsCard from '../components/tasks/StatsCard';
+import TaskFilters from '../components/tasks/TaskFilters';
+
+export default function Dashboard() {
+  const { address, isConnected } = useWallet();
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [userTasks, setUserTasks] = useState<Task[]>([]);
+  const [assignedTasks, setAssignedTasks] = useState<Task[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('all');
+  const [filters, setFilters] = useState({
+    status: 'all',
+    sortBy: 'newest',
+  });
+  
+  useEffect(() => {
+    async function loadTasks() {
+      if (!isConnected) return;
+      
+      setIsLoading(true);
+      try {
+        const [allTasks, created, assigned] = await Promise.all([
+          getAllTasks(),
+          getUserCreatedTasks(address),
+          getUserAssignedTasks(address)
+        ]);
+        
+        setTasks(allTasks);
+        setUserTasks(created);
+        setAssignedTasks(assigned);
+      } catch (error) {
+        console.error("Error loading tasks:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    
+    loadTasks();
+  }, [isConnected, address]);
+  
+  const getFilteredTasks = () => {
+    let filteredTasks: Task[] = [];
+    
+    switch (activeTab) {
+      case 'created':
+        filteredTasks = userTasks;
+        break;
+      case 'assigned':
+        filteredTasks = assignedTasks;
+        break;
+      default:
+        filteredTasks = tasks;
+    }
+    
+    // Apply status filter
+    if (filters.status !== 'all') {
+      filteredTasks = filteredTasks.filter(task => 
+        TaskStatus[task.status].toLowerCase() === filters.status
+      );
+    }
+    
+    // Apply sorting
+    return filteredTasks.sort((a, b) => {
+      if (filters.sortBy === 'reward') {
+        return parseFloat(b.reward) - parseFloat(a.reward);
+      } else if (filters.sortBy === 'deadline') {
+        return a.deadline - b.deadline;
+      } else {
+        // Default sort by newest
+        return parseInt(b.id) - parseInt(a.id);
+      }
+    });
+  };
+  
+  const filteredTasks = getFilteredTasks();
+  
+  // Task statistics
+  const stats = [
+    { name: 'Open Tasks', value: tasks.filter(t => t.status === TaskStatus.Open).length },
+    { name: 'In Progress', value: tasks.filter(t => t.status === TaskStatus.InProgress).length },
+    { name: 'Completed', value: tasks.filter(t => t.status === TaskStatus.Completed || t.status === TaskStatus.Verified).length },
+  ];
+  
+  return (
+    <MainLayout>
+      <div className="px-4 py-5 sm:px-6">
+        <div className="md:flex md:items-center md:justify-between">
+          <div className="flex-1 min-w-0">
+            <h2 className="text-2xl font-bold leading-7 text-gray-900 dark:text-white sm:text-3xl sm:truncate">
+              Dashboard
+            </h2>
+          </div>
+          <div className="mt-4 flex md:mt-0 md:ml-4">
+            <CreateTaskButton />
+          </div>
+        </div>
+      </div>
+      
+      <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {stats.map((item) => (
+          <StatsCard key={item.name} name={item.name} value={item.value} />
+        ))}
+      </div>
+      
+      <div className="mt-8">
+        <div className="sm:flex sm:items-center">
+          <div className="sm:flex-auto">
+            <h3 className="text-lg font-medium leading-6 text-gray-900 dark:text-white">Tasks</h3>
+          </div>
+          <div className="mt-4 sm:mt-0 sm:ml-16 sm:flex-none">
+            <TaskFilters 
+              filters={filters} 
+              setFilters={setFilters} 
+              activeTab={activeTab}
+              setActiveTab={setActiveTab}
+            />
+          </div>
+        </div>
+        
+        <div className="mt-6">
+          <TaskList 
+            tasks={filteredTasks}
+            isLoading={isLoading}
+            showCreator={activeTab !== 'created'}
+            showWorker={activeTab !== 'assigned'}
+          />
+        </div>
+        
+        {filteredTasks.length === 0 && !isLoading && (
+          <div className="mt-12 text-center">
+            <SparklesIcon className="mx-auto h-12 w-12 text-gray-400" />
+            <h3 className="mt-2 text-lg font-medium text-gray-900 dark:text-white">No tasks found</h3>
+            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {activeTab === 'all' ? 'No tasks are available with the selected filters.' : 
+               activeTab === 'created' ? 'You haven\'t created any tasks yet.' : 
+               'You haven\'t taken any tasks yet.'}
+            </p>
+            {activeTab === 'created' && (
+              <div className="mt-6">
+                <CreateTaskButton 
+                  variant="primary" 
+                  text="Create your first task" 
+                  icon={<PlusIcon className="h-5 w-5 mr-2" />} 
+                />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </MainLayout>
+  );
+}
+```
+
+#### 4. Tasks API Service
+
+```typescript
+// src/services/api/tasks.ts
+import axios from 'axios';
+import { Task, TaskMetadata, TaskSubmission } from '../../types/task';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+
+// Add auth token to requests
+const authHeader = () => {
+  const token = localStorage.getItem('authToken');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+// Get task metadata from IPFS
+export const getTaskMetadata = async (metadataURI: string): Promise<TaskMetadata> => {
+  try {
+    // If it's an IPFS URI, convert to HTTP gateway URL
+    const url = metadataURI.startsWith('ipfs://') 
+      ? `https://ipfs.io/ipfs/${metadataURI.replace('ipfs://', '')}`
+      : metadataURI;
+      
+    const response = await axios.get(url);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching task metadata:', error);
+    return {
+      description: 'Failed to load description',
+      requirements: [],
+      category: 'Unknown',
+      skills: [],
+      imageURI: ''
+    };
+  }
+};
+
+// Get task submission from IPFS
+export const getTaskSubmission = async (submissionURI: string): Promise<TaskSubmission> => {
+  try {
+    // If it's an IPFS URI, convert to HTTP gateway URL
+    const url = submissionURI.startsWith('ipfs://') 
+      ? `https://ipfs.io/ipfs/${submissionURI.replace('ipfs://', '')}`
+      : submissionURI;
+      
+    const response = await axios.get(url);
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching task submission:', error);
+    return {
+      text: 'Failed to load submission',
+      files: [],
+      timestamp: Date.now()
+    };
+  }
+};
+
+// Track task visit for analytics
+export const trackTaskVisit = async (taskId: string): Promise<voi
