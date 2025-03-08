@@ -46,3 +46,34 @@ const LandingPage: React.FC = () => {
 };
 
 export default LandingPage;
+import React from 'react';
+import { Button } from './ui/Button';
+
+interface LandingPageProps {
+  onConnectWallet: () => void;
+}
+
+const LandingPage: React.FC<LandingPageProps> = ({ onConnectWallet }) => {
+  return (
+    <div className="flex flex-col items-center justify-center h-screen bg-dark-900 text-white">
+      <div className="text-center mb-8">
+        <h1 className="text-3xl font-bold mb-4">Welcome to Lagoon</h1>
+        <p className="text-lg text-gray-300 max-w-md">
+          A decentralized task platform that allows you to create, take on, and complete tasks with crypto rewards.
+        </p>
+      </div>
+      
+      <div className="flex flex-col items-center justify-center mt-8">
+        <p className="text-xl mb-6">Please connect your wallet to continue</p>
+        <Button 
+          onClick={onConnectWallet} 
+          className="bg-purple-500 hover:bg-purple-600 text-white py-2 px-6 rounded-md flex items-center"
+        >
+          Connect Wallet
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+export default LandingPage;
