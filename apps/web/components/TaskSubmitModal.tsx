@@ -1,8 +1,12 @@
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useWeb3 } from '../contexts/Web3Context';
-import { uploadFileToIPFS, uploadJSONToIPFS } from '../../../packages/ipfs';
 import { ethers } from 'ethers';
+import { uploadFileToIPFS, uploadJSONToIPFS } from 'ipfs';
+import { AlertCircle, Upload, FileIcon } from 'lucide-react';
+import { Button } from './ui/Button';
+import { Alert, AlertDescription } from './ui/alert';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 
 interface TaskSubmitModalProps {
   isOpen: boolean;
@@ -17,11 +21,10 @@ export function TaskSubmitModal({ isOpen, onClose, onSuccess }: TaskSubmitModalP
   const [category, setCategory] = useState('');
   const [tags, setTags] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
   
-  const { address, taskPlatformContract, tokenContract } = useWeb3();
+  const { contract, address } = useWeb3();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -47,7 +50,7 @@ export function TaskSubmitModal({ isOpen, onClose, onSuccess }: TaskSubmitModalP
     setCategory('');
     setTags('');
     setSelectedFile(null);
-    setError(null);
+    setError('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -58,30 +61,31 @@ export function TaskSubmitModal({ isOpen, onClose, onSuccess }: TaskSubmitModalP
       return;
     }
     
-    if (!taskPlatformContract || !tokenContract) {
-      setError('Contracts not initialized');
-      return;
-    }
-    
     if (!title || !description || !reward) {
       setError('Please fill in all required fields');
       return;
     }
     
+    if (!contract) {
+      setError('Contract not initialized');
+      return;
+    }
+    
     try {
-      setIsUploading(true);
-      setError(null);
+      setIsLoading(true);
+      setError('');
       
       // Upload file to IPFS if selected
       let attachmentIpfsHash = '';
       
       if (selectedFile) {
-        const fileResult = await uploadFileToIPFS(
-          selectedFile,
+        const fileBuffer = await selectedFile.arrayBuffer().then(buffer => Buffer.from(buffer));
+        const uploadResult = await uploadFileToIPFS(
+          fileBuffer,
           selectedFile.name,
           { description, category }
         );
-        attachmentIpfsHash = fileResult.IpfsHash;
+        attachmentIpfsHash = uploadResult.IpfsHash;
       }
       
       // Create task metadata
@@ -102,21 +106,11 @@ export function TaskSubmitModal({ isOpen, onClose, onSuccess }: TaskSubmitModalP
         { type: 'task-metadata' }
       );
       
-      setIsUploading(false);
-      setIsSubmitting(true);
-      
       // Convert reward from ETH to wei
       const rewardInWei = ethers.parseEther(reward);
       
-      // Approve token transfer
-      const approveTx = await tokenContract.approve(
-        await taskPlatformContract.getAddress(),
-        rewardInWei
-      );
-      await approveTx.wait();
-      
       // Create task on blockchain
-      const createTaskTx = await taskPlatformContract.createTask(
+      const tx = await contract.createTask(
         title,
         description,
         rewardInWei,
@@ -125,16 +119,21 @@ export function TaskSubmitModal({ isOpen, onClose, onSuccess }: TaskSubmitModalP
         metadataResult.IpfsHash
       );
       
-      const receipt = await createTaskTx.wait();
+      const receipt = await tx.wait();
+      console.log('Task created:', receipt);
       
-      // Extract task ID from event logs
-      const taskCreatedEvent = receipt.logs.find(
-        (log: any) => log.eventName === 'TaskCreated'
-      );
+      // Find the TaskCreated event to get the task ID
+      const event = receipt.logs
+        .map((log: any) => {
+          try {
+            return contract.interface.parseLog(log);
+          } catch (e) {
+            return null;
+          }
+        })
+        .find((event: any) => event && event.name === 'TaskCreated');
       
-      const taskId = taskCreatedEvent ? taskCreatedEvent.args.taskId.toString() : '0';
-      
-      console.log(`Task created with ID: ${taskId}`);
+      const taskId = event ? event.args.taskId.toString() : '0';
       
       // Call success callback
       if (onSuccess) {
@@ -148,133 +147,146 @@ export function TaskSubmitModal({ isOpen, onClose, onSuccess }: TaskSubmitModalP
       console.error('Error creating task:', err);
       setError(err.message || 'Failed to create task');
     } finally {
-      setIsUploading(false);
-      setIsSubmitting(false);
+      setIsLoading(false);
     }
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="w-full max-w-md bg-white rounded-lg p-6 relative">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-gray-500 hover:text-gray-700"
-        >
-          ✕
-        </button>
-        
-        <h2 className="text-xl font-bold mb-4">Create New Task</h2>
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Create New Task</DialogTitle>
+        </DialogHeader>
         
         <form onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <label htmlFor="title" className="text-right text-sm font-medium">
                 Title *
               </label>
               <input
+                id="title"
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                className="col-span-3 flex h-10 w-full rounded-md border px-3 py-2 text-sm"
                 required
               />
             </div>
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <label htmlFor="description" className="text-right text-sm font-medium">
                 Description *
               </label>
               <textarea
+                id="description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                rows={4}
+                className="col-span-3 flex h-24 w-full rounded-md border px-3 py-2 text-sm"
                 required
+                rows={4}
               />
             </div>
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <label htmlFor="reward" className="text-right text-sm font-medium">
                 Reward (ETH) *
               </label>
               <input
+                id="reward"
                 type="number"
                 step="0.001"
                 value={reward}
                 onChange={(e) => setReward(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                className="col-span-3 flex h-10 w-full rounded-md border px-3 py-2 text-sm"
                 required
               />
             </div>
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <label htmlFor="category" className="text-right text-sm font-medium">
                 Category
               </label>
               <input
+                id="category"
                 type="text"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                className="col-span-3 flex h-10 w-full rounded-md border px-3 py-2 text-sm"
               />
             </div>
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Tags (comma separated)
+            <div className="grid grid-cols-4 items-center gap-4">
+              <label htmlFor="tags" className="text-right text-sm font-medium">
+                Tags
               </label>
               <input
+                id="tags"
                 type="text"
                 value={tags}
                 onChange={handleTagsChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                placeholder="e.g. urgent, design, frontend"
+                className="col-span-3 flex h-10 w-full rounded-md border px-3 py-2 text-sm"
+                placeholder="e.g. design, frontend, urgent"
               />
             </div>
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <label className="text-right text-sm font-medium">
                 Attachment
               </label>
-              <input
-                type="file"
-                onChange={handleFileChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-              />
-              {selectedFile && (
-                <div className="text-sm mt-1 text-gray-500">
-                  Selected file: {selectedFile.name}
-                </div>
-              )}
+              <div className="col-span-3">
+                <input
+                  type="file"
+                  id="file"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => document.getElementById('file')?.click()}
+                  className="flex gap-2 items-center"
+                >
+                  <Upload size={16} />
+                  Choose File
+                </Button>
+                {selectedFile && (
+                  <div className="flex items-center gap-2 text-sm mt-2">
+                    <FileIcon size={16} />
+                    {selectedFile.name}
+                  </div>
+                )}
+              </div>
             </div>
             
             {error && (
-              <div className="text-red-500 text-sm">{error}</div>
+              <Alert variant="destructive" className="col-span-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
             )}
-            
-            <div className="flex justify-end pt-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md mr-2"
-                disabled={isUploading || isSubmitting}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isUploading || isSubmitting}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md disabled:bg-blue-400"
-              >
-                {isUploading ? 'Uploading...' : isSubmitting ? 'Creating...' : 'Create Task'}
-              </button>
-            </div>
           </div>
+          
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isLoading}
+            >
+              {isLoading ? 'Creating...' : 'Create Task'}
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

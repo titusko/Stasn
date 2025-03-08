@@ -4,157 +4,144 @@ import axios from 'axios';
 const PINATA_JWT = process.env.NEXT_PUBLIC_PINATA_JWT;
 const PINATA_GATEWAY = process.env.NEXT_PUBLIC_PINATA_GATEWAY || 'https://gateway.pinata.cloud';
 
-// Check if we're in a browser environment
-const isBrowser = typeof window !== 'undefined';
+if (!PINATA_JWT) {
+  console.warn('PINATA_JWT is not set. IPFS uploads will not work.');
+}
 
-interface IPFSMetadata {
+interface PinataMetadata {
   name?: string;
   keyvalues?: Record<string, string>;
 }
 
-interface IPFSUploadResult {
+interface PinataOptions {
+  cidVersion?: number;
+  customPinPolicy?: {
+    regions: [{ id: string; desiredReplicationCount: number }];
+  };
+}
+
+interface UploadResult {
   IpfsHash: string;
   PinSize: number;
   Timestamp: string;
-  isDuplicate?: boolean;
+  url: string;
 }
 
 /**
  * Uploads a file to IPFS via Pinata
  */
 export async function uploadFileToIPFS(
-  file: File | Buffer,
-  fileName: string,
+  file: Buffer | File,
+  name?: string,
   metadata?: Record<string, string>
-): Promise<IPFSUploadResult> {
-  if (!PINATA_JWT) {
-    throw new Error('Pinata JWT not configured');
-  }
-
-  const formData = new FormData();
-  
-  // Add file to form data
-  if (isBrowser && file instanceof File) {
-    formData.append('file', file);
-  } else if (!isBrowser && Buffer.isBuffer(file)) {
-    // For Node.js environment
-    formData.append('file', new Blob([file]), fileName);
-  } else {
-    throw new Error('Invalid file format');
-  }
-  
-  // Prepare metadata
-  const pinataMetadata: IPFSMetadata = {
-    name: fileName
-  };
-  
-  if (metadata) {
-    pinataMetadata.keyvalues = metadata;
-  }
-  
-  formData.append('pinataMetadata', JSON.stringify(pinataMetadata));
-  
-  // Configure options for faster uploads
-  const pinataOptions = JSON.stringify({
-    cidVersion: 1,
-    wrapWithDirectory: false
-  });
-  
-  formData.append('pinataOptions', pinataOptions);
-  
+): Promise<UploadResult> {
   try {
-    const res = await axios.post(
+    const formData = new FormData();
+    
+    // Add the file to the form data
+    if (file instanceof Buffer) {
+      const blob = new Blob([file]);
+      formData.append('file', blob, name || 'file');
+    } else {
+      formData.append('file', file);
+    }
+    
+    // Add metadata if provided
+    if (name || metadata) {
+      const pinataMetadata: PinataMetadata = {
+        name: name || undefined,
+        keyvalues: metadata || undefined,
+      };
+      
+      formData.append('pinataMetadata', JSON.stringify(pinataMetadata));
+    }
+    
+    // Set default options
+    const pinataOptions: PinataOptions = {
+      cidVersion: 1,
+    };
+    
+    formData.append('pinataOptions', JSON.stringify(pinataOptions));
+    
+    // Upload to Pinata
+    const response = await axios.post(
       'https://api.pinata.cloud/pinning/pinFileToIPFS',
       formData,
       {
+        maxBodyLength: Infinity,
         headers: {
           'Authorization': `Bearer ${PINATA_JWT}`,
-          'Content-Type': 'multipart/form-data'
-        }
+        },
       }
     );
     
-    return res.data;
+    return {
+      ...response.data,
+      url: `${PINATA_GATEWAY}/ipfs/${response.data.IpfsHash}`,
+    };
   } catch (error) {
     console.error('Error uploading to IPFS:', error);
-    if (axios.isAxiosError(error) && error.response) {
-      throw new Error(`IPFS upload failed: ${error.response.data.message || error.message}`);
-    }
     throw new Error('Failed to upload to IPFS');
   }
 }
 
 /**
- * Uploads JSON data to IPFS via Pinata
+ * Uploads JSON to IPFS via Pinata
  */
 export async function uploadJSONToIPFS(
-  jsonData: any,
-  name: string,
+  json: Record<string, any>,
+  name?: string,
   metadata?: Record<string, string>
-): Promise<IPFSUploadResult> {
-  if (!PINATA_JWT) {
-    throw new Error('Pinata JWT not configured');
-  }
-  
-  // Prepare metadata
-  const pinataMetadata: IPFSMetadata = {
-    name
-  };
-  
-  if (metadata) {
-    pinataMetadata.keyvalues = metadata;
-  }
-  
+): Promise<UploadResult> {
   try {
-    const res = await axios.post(
-      'https://api.pinata.cloud/pinning/pinJSONToIPFS',
-      {
-        pinataMetadata,
-        pinataContent: jsonData,
-        pinataOptions: {
-          cidVersion: 1
-        }
+    const data = {
+      pinataMetadata: {
+        name: name || 'JSON Data',
+        keyvalues: metadata || {},
       },
+      pinataContent: json,
+      pinataOptions: {
+        cidVersion: 1,
+      },
+    };
+    
+    // Upload to Pinata
+    const response = await axios.post(
+      'https://api.pinata.cloud/pinning/pinJSONToIPFS',
+      data,
       {
         headers: {
+          'Content-Type': 'application/json',
           'Authorization': `Bearer ${PINATA_JWT}`,
-          'Content-Type': 'application/json'
-        }
+        },
       }
     );
     
-    return res.data;
+    return {
+      ...response.data,
+      url: `${PINATA_GATEWAY}/ipfs/${response.data.IpfsHash}`,
+    };
   } catch (error) {
     console.error('Error uploading JSON to IPFS:', error);
-    if (axios.isAxiosError(error) && error.response) {
-      throw new Error(`IPFS JSON upload failed: ${error.response.data.message || error.message}`);
-    }
     throw new Error('Failed to upload JSON to IPFS');
   }
 }
 
 /**
- * Gets the gateway URL for an IPFS hash
+ * Retrieves content from IPFS via Pinata gateway
  */
-export function getIPFSGatewayURL(ipfsHash: string): string {
-  if (!ipfsHash) return '';
-  
-  // Remove ipfs:// prefix if present
-  const hash = ipfsHash.replace('ipfs://', '');
-  
-  return `${PINATA_GATEWAY}/ipfs/${hash}`;
-}
-
-/**
- * Retrieve data from IPFS
- */
-export async function getFromIPFS(ipfsHash: string): Promise<any> {
+export async function getFromIPFS(cid: string): Promise<any> {
   try {
-    const url = getIPFSGatewayURL(ipfsHash);
-    const response = await axios.get(url);
+    const response = await axios.get(`${PINATA_GATEWAY}/ipfs/${cid}`);
     return response.data;
   } catch (error) {
     console.error('Error fetching from IPFS:', error);
-    throw new Error('Failed to fetch data from IPFS');
+    throw new Error('Failed to fetch from IPFS');
   }
 }
+
+export default {
+  uploadFileToIPFS,
+  uploadJSONToIPFS,
+  getFromIPFS,
+};

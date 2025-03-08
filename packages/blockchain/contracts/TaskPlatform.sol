@@ -1,247 +1,213 @@
-
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.17;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/Counters.sol";
 
-contract TaskPlatform is Ownable, ReentrancyGuard {
-    // Task statuses
-    enum TaskStatus { Open, InProgress, Completed, Disputed, Canceled }
-    
-    // Task structure
+contract TaskPlatform is ReentrancyGuard, Ownable {
+    using Counters for Counters.Counter;
+
+    // Enums
+    enum TaskStatus { Created, InProgress, UnderReview, Completed, Cancelled }
+
+    // Structs
     struct Task {
         uint256 id;
+        address creator;
+        address assignee;
         string title;
         string description;
-        address creator;
-        address worker;
         uint256 reward;
-        string category;
-        string[] tags;
-        string ipfsHash;
+        address rewardToken;
         TaskStatus status;
         uint256 createdAt;
         uint256 completedAt;
+        uint256 deadline;
+        string category;
+        string[] tags;
+        string ipfsHash;
     }
-    
-    // Counter for task IDs
-    uint256 private _taskIdCounter;
-    
-    // Mapping of task ID to Task
-    mapping(uint256 => Task) public tasks;
-    
-    // User's created tasks
-    mapping(address => uint256[]) public createdTasks;
-    
-    // User's taken tasks
-    mapping(address => uint256[]) public takenTasks;
-    
+
+    // State variables
+    Counters.Counter private _taskIds;
+
     // Platform fee percentage (in basis points, 100 = 1%)
     uint256 public platformFee = 500; // 5% default
-    
+
     // Token used for transactions
     IERC20 public paymentToken;
-    
+
+    // Mappings
+    mapping(uint256 => Task) public tasks;
+    mapping(address => uint256[]) public createdTasks;
+    mapping(address => uint256[]) public assignedTasks;
+
     // Events
-    event TaskCreated(uint256 indexed taskId, address indexed creator, uint256 reward);
-    event TaskTaken(uint256 indexed taskId, address indexed worker);
+    event TaskCreated(uint256 indexed taskId, address indexed creator, uint256 reward, string ipfsHash);
+    event TaskAssigned(uint256 indexed taskId, address indexed worker);
     event TaskCompleted(uint256 indexed taskId, address indexed worker);
-    event TaskCanceled(uint256 indexed taskId);
+    event TaskCancelled(uint256 indexed taskId);
     event TaskDisputed(uint256 indexed taskId, address indexed disputer);
-    event TaskResolved(uint256 indexed taskId, address indexed worker, bool workerRewarded);
-    
-    // Constructor
-    constructor() Ownable(msg.sender) {
-        _taskIdCounter = 1;
+    event PlatformFeeChanged(uint256 oldFee, uint256 newFee);
+    event PaymentTokenChanged(address oldToken, address newToken);
+
+    constructor(address _paymentToken) Ownable(msg.sender) {
+        paymentToken = IERC20(_paymentToken);
     }
-    
-    // Set payment token
-    function setPaymentToken(address tokenAddress) external onlyOwner {
-        paymentToken = IERC20(tokenAddress);
+
+    function setPlatformFee(uint256 _fee) external onlyOwner {
+        require(_fee <= 1000, "Fee cannot exceed 10%");
+        uint256 oldFee = platformFee;
+        platformFee = _fee;
+        emit PlatformFeeChanged(oldFee, _fee);
     }
-    
-    // Set platform fee
-    function setPlatformFee(uint256 newFee) external onlyOwner {
-        require(newFee <= 1000, "Fee cannot be more than 10%");
-        platformFee = newFee;
+
+    function setPaymentToken(address _tokenAddress) external onlyOwner {
+        address oldToken = address(paymentToken);
+        paymentToken = IERC20(_tokenAddress);
+        emit PaymentTokenChanged(oldToken, _tokenAddress);
     }
-    
-    // Create a new task
+
     function createTask(
-        string memory title,
-        string memory description,
-        uint256 reward,
-        string memory category,
-        string[] memory tags,
-        string memory ipfsHash
+        string memory _title,
+        string memory _description,
+        uint256 _reward,
+        string memory _category,
+        string[] memory _tags,
+        string memory _ipfsHash
     ) external nonReentrant returns (uint256) {
-        require(bytes(title).length > 0, "Title cannot be empty");
-        require(reward > 0, "Reward must be greater than 0");
-        
+        require(bytes(_title).length > 0, "Title cannot be empty");
+        require(bytes(_description).length > 0, "Description cannot be empty");
+        require(_reward > 0, "Reward must be greater than 0");
+
         // Transfer tokens from creator to contract
-        require(paymentToken.transferFrom(msg.sender, address(this), reward), "Token transfer failed");
-        
-        // Create task
-        uint256 taskId = _taskIdCounter++;
-        tasks[taskId] = Task({
-            id: taskId,
-            title: title,
-            description: description,
-            creator: msg.sender,
-            worker: address(0),
-            reward: reward,
-            category: category,
-            tags: tags,
-            ipfsHash: ipfsHash,
-            status: TaskStatus.Open,
-            createdAt: block.timestamp,
-            completedAt: 0
-        });
-        
+        require(
+            paymentToken.transferFrom(msg.sender, address(this), _reward),
+            "Token transfer failed"
+        );
+
+        // Increment task ID
+        _taskIds.increment();
+        uint256 newTaskId = _taskIds.current();
+
+        // Create new task
+        Task storage task = tasks[newTaskId];
+        task.id = newTaskId;
+        task.creator = msg.sender;
+        task.title = _title;
+        task.description = _description;
+        task.reward = _reward;
+        task.rewardToken = address(paymentToken);
+        task.status = TaskStatus.Created;
+        task.createdAt = block.timestamp;
+        task.category = _category;
+        task.tags = _tags;
+        task.ipfsHash = _ipfsHash;
+
         // Add to creator's tasks
-        createdTasks[msg.sender].push(taskId);
-        
-        emit TaskCreated(taskId, msg.sender, reward);
-        
-        return taskId;
+        createdTasks[msg.sender].push(newTaskId);
+
+        emit TaskCreated(newTaskId, msg.sender, _reward, _ipfsHash);
+
+        return newTaskId;
     }
-    
-    // Take a task
-    function takeTask(uint256 taskId) external nonReentrant {
-        require(tasks[taskId].id != 0, "Task does not exist");
-        require(tasks[taskId].status == TaskStatus.Open, "Task is not open");
-        require(tasks[taskId].creator != msg.sender, "Cannot take own task");
-        
-        tasks[taskId].worker = msg.sender;
-        tasks[taskId].status = TaskStatus.InProgress;
-        
-        // Add to worker's tasks
-        takenTasks[msg.sender].push(taskId);
-        
-        emit TaskTaken(taskId, msg.sender);
+
+    function assignTask(uint256 _taskId) external nonReentrant {
+        Task storage task = tasks[_taskId];
+
+        require(task.id > 0, "Task does not exist");
+        require(task.status == TaskStatus.Created, "Task is not available");
+        require(task.creator != msg.sender, "Creator cannot assign themselves");
+
+        task.assignee = msg.sender;
+        task.status = TaskStatus.InProgress;
+
+        // Add to worker's assigned tasks
+        assignedTasks[msg.sender].push(_taskId);
+
+        emit TaskAssigned(_taskId, msg.sender);
     }
-    
-    // Submit task as completed
-    function completeTask(uint256 taskId, string memory submissionIpfsHash) external nonReentrant {
-        require(tasks[taskId].id != 0, "Task does not exist");
-        require(tasks[taskId].status == TaskStatus.InProgress, "Task is not in progress");
-        require(tasks[taskId].worker == msg.sender, "Not assigned to this task");
-        
-        // Update task metadata
-        tasks[taskId].status = TaskStatus.Completed;
-        tasks[taskId].ipfsHash = submissionIpfsHash;
-        tasks[taskId].completedAt = block.timestamp;
-        
-        emit TaskCompleted(taskId, msg.sender);
+
+    function submitTask(uint256 _taskId) external nonReentrant {
+        Task storage task = tasks[_taskId];
+
+        require(task.id > 0, "Task does not exist");
+        require(task.status == TaskStatus.InProgress, "Task is not in progress");
+        require(task.assignee == msg.sender, "Only assignee can submit");
+
+        task.status = TaskStatus.UnderReview;
+
+        // Event could be added here for task submission
     }
-    
-    // Approve task and release payment
-    function approveTask(uint256 taskId) external nonReentrant {
-        require(tasks[taskId].id != 0, "Task does not exist");
-        require(tasks[taskId].status == TaskStatus.Completed, "Task is not completed");
-        require(tasks[taskId].creator == msg.sender, "Not the task creator");
-        
-        Task storage task = tasks[taskId];
-        address worker = task.worker;
-        uint256 reward = task.reward;
-        
-        // Calculate platform fee
-        uint256 fee = (reward * platformFee) / 10000;
-        uint256 workerPayment = reward - fee;
-        
-        // Transfer tokens to worker
-        require(paymentToken.transfer(worker, workerPayment), "Token transfer to worker failed");
-        
-        // Transfer fee to platform owner
-        if (fee > 0) {
-            require(paymentToken.transfer(owner(), fee), "Token transfer of fee failed");
-        }
-        
-        emit TaskResolved(taskId, worker, true);
-    }
-    
-    // Start a dispute for a task
-    function disputeTask(uint256 taskId) external nonReentrant {
-        require(tasks[taskId].id != 0, "Task does not exist");
-        require(
-            tasks[taskId].status == TaskStatus.InProgress || 
-            tasks[taskId].status == TaskStatus.Completed,
-            "Cannot dispute task in current status"
-        );
-        require(
-            tasks[taskId].creator == msg.sender || 
-            tasks[taskId].worker == msg.sender,
-            "Must be task creator or worker"
-        );
-        
-        tasks[taskId].status = TaskStatus.Disputed;
-        
-        emit TaskDisputed(taskId, msg.sender);
-    }
-    
-    // Resolve a dispute (admin only)
-    function resolveDispute(uint256 taskId, bool workerRewarded) external onlyOwner nonReentrant {
-        require(tasks[taskId].id != 0, "Task does not exist");
-        require(tasks[taskId].status == TaskStatus.Disputed, "Task is not disputed");
-        
-        Task storage task = tasks[taskId];
-        address worker = task.worker;
-        address creator = task.creator;
-        uint256 reward = task.reward;
-        
-        if (workerRewarded) {
-            // Calculate platform fee
-            uint256 fee = (reward * platformFee) / 10000;
-            uint256 workerPayment = reward - fee;
-            
-            // Transfer tokens to worker
-            require(paymentToken.transfer(worker, workerPayment), "Token transfer to worker failed");
-            
-            // Transfer fee to platform owner
-            if (fee > 0) {
-                require(paymentToken.transfer(owner(), fee), "Token transfer of fee failed");
-            }
-        } else {
-            // Return tokens to creator
-            require(paymentToken.transfer(creator, reward), "Token transfer to creator failed");
-        }
-        
-        // Mark task as completed
+
+    function completeTask(uint256 _taskId) external nonReentrant {
+        Task storage task = tasks[_taskId];
+
+        require(task.id > 0, "Task does not exist");
+        require(task.status == TaskStatus.UnderReview, "Task is not under review");
+        require(task.creator == msg.sender, "Only creator can complete task");
+
         task.status = TaskStatus.Completed;
         task.completedAt = block.timestamp;
-        
-        emit TaskResolved(taskId, worker, workerRewarded);
+
+        // Calculate fee and payment
+        uint256 fee = (task.reward * platformFee) / 10000;
+        uint256 payment = task.reward - fee;
+
+        // Transfer payment to worker
+        require(
+            paymentToken.transfer(task.assignee, payment),
+            "Worker payment failed"
+        );
+
+        // Transfer fee to platform owner
+        if (fee > 0) {
+            require(
+                paymentToken.transfer(owner(), fee),
+                "Fee payment failed"
+            );
+        }
+
+        emit TaskCompleted(_taskId, task.assignee);
     }
-    
-    // Cancel a task (only by creator if task is open)
-    function cancelTask(uint256 taskId) external nonReentrant {
-        require(tasks[taskId].id != 0, "Task does not exist");
-        require(tasks[taskId].status == TaskStatus.Open, "Can only cancel open tasks");
-        require(tasks[taskId].creator == msg.sender, "Not the task creator");
-        
-        tasks[taskId].status = TaskStatus.Canceled;
-        
+
+    function cancelTask(uint256 _taskId) external nonReentrant {
+        Task storage task = tasks[_taskId];
+
+        require(task.id > 0, "Task does not exist");
+        require(
+            task.status == TaskStatus.Created || task.status == TaskStatus.InProgress,
+            "Task cannot be cancelled in current state"
+        );
+        require(task.creator == msg.sender, "Only creator can cancel task");
+
+        task.status = TaskStatus.Cancelled;
+
         // Return tokens to creator
-        require(paymentToken.transfer(msg.sender, tasks[taskId].reward), "Token transfer failed");
-        
-        emit TaskCanceled(taskId);
+        require(
+            paymentToken.transfer(task.creator, task.reward),
+            "Token return failed"
+        );
+
+        emit TaskCancelled(_taskId);
     }
-    
-    // Get a task by ID
-    function getTask(uint256 taskId) external view returns (Task memory) {
-        require(tasks[taskId].id != 0, "Task does not exist");
-        return tasks[taskId];
+
+    function getTask(uint256 _taskId) external view returns (Task memory) {
+        require(tasks[_taskId].id > 0, "Task does not exist");
+        return tasks[_taskId];
     }
-    
-    // Get all created tasks by an address
-    function getCreatedTasks(address user) external view returns (uint256[] memory) {
-        return createdTasks[user];
+
+    function getCreatorTasks(address _creator) external view returns (uint256[] memory) {
+        return createdTasks[_creator];
     }
-    
-    // Get all taken tasks by an address
-    function getTakenTasks(address user) external view returns (uint256[] memory) {
-        return takenTasks[user];
+
+    function getAssigneeTasks(address _assignee) external view returns (uint256[] memory) {
+        return assignedTasks[_assignee];
+    }
+
+    function getTaskCount() external view returns (uint256) {
+        return _taskIds.current();
     }
 }
