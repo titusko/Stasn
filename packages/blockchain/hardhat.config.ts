@@ -1,12 +1,14 @@
-
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
-import "hardhat-deploy";
-import "hardhat-gas-reporter";
-import "solidity-coverage";
 import * as dotenv from "dotenv";
 
-dotenv.config({ path: "../../.env" });
+// Load environment variables from .env file
+dotenv.config();
+
+// Get environment variables with fallbacks
+const PRIVATE_KEY = process.env.PRIVATE_KEY || "0000000000000000000000000000000000000000000000000000000000000000";
+const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || "";
+const INFURA_API_KEY = process.env.INFURA_API_KEY || "";
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -14,45 +16,32 @@ const config: HardhatUserConfig = {
     settings: {
       optimizer: {
         enabled: true,
-        runs: 200
-      }
-    }
+        runs: 200,
+      },
+    },
   },
   networks: {
     hardhat: {
-      chainId: 1337
+      chainId: 31337,
     },
     localhost: {
-      url: "http://127.0.0.1:8545"
+      url: "http://127.0.0.1:8545",
+      chainId: 31337,
     },
     sepolia: {
-      url: process.env.SEPOLIA_URL || "",
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : []
+      url: `https://sepolia.infura.io/v3/${INFURA_API_KEY}`,
+      accounts: [PRIVATE_KEY],
     },
-    mainnet: {
-      url: process.env.MAINNET_URL || "",
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
-      gasPrice: 30000000000 // 30 gwei
-    }
-  },
-  gasReporter: {
-    enabled: process.env.REPORT_GAS !== undefined,
-    currency: "USD",
-    coinmarketcap: process.env.COINMARKETCAP_API_KEY
-  },
-  etherscan: {
-    apiKey: process.env.ETHERSCAN_API_KEY
   },
   paths: {
     sources: "./contracts",
     tests: "./test",
     cache: "./cache",
-    artifacts: "./artifacts"
+    artifacts: "./artifacts",
   },
-  typechain: {
-    outDir: "typechain-types",
-    target: "ethers-v6"
-  }
+  etherscan: {
+    apiKey: ETHERSCAN_API_KEY,
+  },
 };
 
 export default config;

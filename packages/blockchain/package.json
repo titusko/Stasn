@@ -1,41 +1,24 @@
-
 {
   "name": "blockchain",
-  "version": "0.0.0",
-  "private": true,
+  "version": "1.0.0",
+  "main": "index.js",
   "scripts": {
-    "clean": "rm -rf artifacts cache typechain-types",
-    "compile": "hardhat compile",
-    "test": "hardhat test",
-    "deploy:local": "hardhat run scripts/deploy.ts --network localhost",
-    "deploy:testnet": "hardhat run scripts/deploy.ts --network sepolia",
-    "deploy:mainnet": "hardhat run scripts/deploy.ts --network mainnet",
-    "node": "hardhat node",
-    "build": "tsc && hardhat compile",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
   "devDependencies": {
-    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
-    "@typechain/ethers-v6": "^0.5.1",
-    "@typechain/hardhat": "^9.1.0",
-    "@types/chai": "^4.3.11",
-    "@types/mocha": "^10.0.6",
-    "@types/node": "^20.11.20",
-    "chai": "^4.4.1",
-    "dotenv": "^16.4.5",
-    "eslint": "^8.57.0",
-    "eslint-config-custom": "workspace:*",
-    "hardhat": "^2.20.0",
-    "hardhat-deploy": "^0.11.45",
-    "hardhat-gas-reporter": "^1.0.10",
-    "solidity-coverage": "^0.8.7",
-    "ts-node": "^10.9.2",
-    "typechain": "^8.3.2",
-    "typescript": "^5.3.3"
-  },
-  "dependencies": {
-    "@openzeppelin/contracts": "^5.0.1",
-    "ethers": "^6.8.1"
+    "@nomiclabs/hardhat-ethers": "^2.2.3",
+    "@nomiclabs/hardhat-waffle": "^2.0.6",
+    "@openzeppelin/contracts": "^5.2.0",
+    "@types/chai": "^5.2.0",
+    "chai": "^5.2.0",
+    "ethereum-waffle": "^4.0.10",
+    "ethers": "^5.8.0",
+    "hardhat": "^2.22.19",
+    "hardhat-gas-reporter": "^2.2.2",
+    "solidity-coverage": "^0.8.14"
   }
 }
