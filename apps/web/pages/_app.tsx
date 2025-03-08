@@ -1,14 +1,22 @@
-import '@/styles/globals.css';
+
+import '../styles/globals.css';
 import type { AppProps } from 'next/app';
 import { Web3Provider } from '@/contexts/Web3Context';
-import { AuthProvider } from '@/contexts/AuthContext';
+import Header from '@/components/layout/Header';
+import Footer from '@/components/layout/Footer';
 
-export default function App({ Component, pageProps }: AppProps) {
+function MyApp({ Component, pageProps }: AppProps) {
   return (
-    <AuthProvider>
-      <Web3Provider>
-        <Component {...pageProps} />
-      </Web3Provider>
-    </AuthProvider>
+    <Web3Provider>
+      <div className="min-h-screen flex flex-col">
+        <Header />
+        <main className="flex-grow">
+          <Component {...pageProps} />
+        </main>
+        <Footer />
+      </div>
+    </Web3Provider>
   );
-} 
+}
+
+export default MyApp;

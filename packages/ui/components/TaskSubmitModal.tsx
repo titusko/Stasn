@@ -1,259 +1,75 @@
-
-import React, { useState, useCallback } from 'react';
-import { useWalletContext } from '../contexts/WalletContext';
-import { useContractWrite } from '../hooks/useContractWrite';
-import { getContractForChain } from '../constants/contracts';
-import { uploadFileToIPFS, uploadJSONToIPFS } from '../services/ipfsService';
-import { toast } from 'react-hot-toast';
+import React, { useState } from 'react';
 
 interface TaskSubmitModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: (taskId: string, ipfsHash: string) => void;
+  onSubmit: (data: { submissionUrl: string; comments: string }) => void;
+  isLoading: boolean;
 }
 
-export function TaskSubmitModal({ isOpen, onClose, onSuccess }: TaskSubmitModalProps) {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [reward, setReward] = useState('');
-  const [category, setCategory] = useState('');
-  const [tags, setTags] = useState('');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  
-  const { account, chainId } = useWalletContext();
-  
-  const taskManagerContract = getContractForChain('TaskManager', chainId || undefined);
-  
-  const { write, isLoading: isSubmitting, error } = useContractWrite({
-    contract: taskManagerContract,
-    method: 'createTask',
-  });
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
-    }
-  };
-
-  const handleTagsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setTags(e.target.value);
-  };
-
-  const parseTagsArray = (): string[] => {
-    return tags
-      .split(',')
-      .map(tag => tag.trim())
-      .filter(tag => tag.length > 0);
-  };
-
-  const resetForm = () => {
-    setTitle('');
-    setDescription('');
-    setReward('');
-    setCategory('');
-    setTags('');
-    setSelectedFile(null);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!account) {
-      toast.error('Please connect your wallet first');
-      return;
-    }
-    
-    if (!title || !description || !reward) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
-    
-    try {
-      setIsUploading(true);
-      
-      // Upload file to IPFS if selected
-      let attachmentIpfsHash = '';
-      
-      if (selectedFile) {
-        const fileBuffer = await selectedFile.arrayBuffer().then(buffer => Buffer.from(buffer));
-        const uploadResult = await uploadFileToIPFS(
-          fileBuffer,
-          selectedFile.name,
-          { description, category }
-        );
-        attachmentIpfsHash = uploadResult.IpfsHash;
-      }
-      
-      // Create task metadata
-      const taskMetadata = {
-        title,
-        description,
-        category: category || 'Uncategorized',
-        tags: parseTagsArray(),
-        attachment: attachmentIpfsHash,
-        timestamp: new Date().toISOString(),
-        creator: account,
-      };
-      
-      // Upload metadata to IPFS
-      const metadataResult = await uploadJSONToIPFS(
-        taskMetadata,
-        `Task: ${title}`,
-        { type: 'task-metadata' }
-      );
-      
-      // Convert reward from ETH to wei
-      const rewardInWei = BigInt(parseFloat(reward) * 1e18);
-      
-      // Create task on blockchain
-      const result = await write([
-        title,
-        description,
-        rewardInWei,
-        category || 'Uncategorized',
-        parseTagsArray(),
-        metadataResult.IpfsHash, // Add IPFS hash as additional parameter
-      ]);
-      
-      toast.success('Task created successfully!');
-      
-      // Call success callback
-      if (onSuccess && result) {
-        onSuccess(
-          result.taskId ? result.taskId.toString() : '0',
-          metadataResult.IpfsHash
-        );
-      }
-      
-      // Reset form and close modal
-      resetForm();
-      onClose();
-    } catch (error: any) {
-      console.error('Error creating task:', error);
-      toast.error(error.message || 'Failed to create task');
-    } finally {
-      setIsUploading(false);
-    }
-  };
+export function TaskSubmitModal({
+  isOpen,
+  onClose,
+  onSubmit,
+  isLoading
+}: TaskSubmitModalProps) {
+  const [submissionUrl, setSubmissionUrl] = useState('');
+  const [comments, setComments] = useState('');
 
   if (!isOpen) return null;
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSubmit({ submissionUrl, comments });
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-      <div className="w-full max-w-md bg-white rounded-lg p-6 relative">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-gray-500 hover:text-gray-700"
-        >
-          ✕
-        </button>
-        
-        <h2 className="text-xl font-bold mb-4">Create New Task</h2>
-        
+    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
+      <div className="bg-cyber-dark-800 border border-cyber-primary p-6 rounded-lg w-full max-w-md">
+        <h2 className="text-xl font-cyber text-cyber-primary mb-4">Submit Task Completion</h2>
+
         <form onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Title *
-              </label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                required
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Description *
-              </label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                rows={4}
-                required
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Reward (ETH) *
-              </label>
-              <input
-                type="number"
-                step="0.001"
-                value={reward}
-                onChange={(e) => setReward(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                required
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Category
-              </label>
-              <input
-                type="text"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Tags (comma separated)
-              </label>
-              <input
-                type="text"
-                value={tags}
-                onChange={handleTagsChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                placeholder="e.g. urgent, design, frontend"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Attachment
-              </label>
-              <input
-                type="file"
-                onChange={handleFileChange}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-              />
-            </div>
-            
-            {error && (
-              <div className="text-red-500 text-sm">{error.message}</div>
-            )}
-            
-            <div className="flex justify-end pt-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md mr-2"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={isUploading || isSubmitting}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md disabled:bg-blue-400"
-              >
-                {isUploading || isSubmitting ? 'Creating...' : 'Create Task'}
-              </button>
-            </div>
+          <div className="mb-4">
+            <label className="block text-sm font-semibold mb-2">Submission URL</label>
+            <input
+              type="text"
+              value={submissionUrl}
+              onChange={(e) => setSubmissionUrl(e.target.value)}
+              className="w-full bg-cyber-dark-900 border border-cyber-primary-400 rounded p-2 text-white"
+              placeholder="https://github.com/your-repo"
+              required
+            />
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-semibold mb-2">Additional Comments</label>
+            <textarea
+              value={comments}
+              onChange={(e) => setComments(e.target.value)}
+              className="w-full bg-cyber-dark-900 border border-cyber-primary-400 rounded p-2 text-white h-32"
+              placeholder="Describe your implementation and how it fulfills the task requirements..."
+            />
+          </div>
+
+          <div className="flex justify-end space-x-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-cyber-secondary text-sm px-4 py-2 rounded-lg"
+              disabled={isLoading}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn-cyber-primary text-sm px-4 py-2 rounded-lg"
+              disabled={isLoading}
+            >
+              {isLoading ? 'Submitting...' : 'Submit Task'}
+            </button>
           </div>
         </form>
       </div>
     </div>
   );
 }
-
-export default TaskSubmitModal;

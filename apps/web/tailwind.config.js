@@ -1,30 +1,37 @@
+
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: [
-    './app/**/*.{js,ts,jsx,tsx,mdx}',
+    './pages/**/*.{js,ts,jsx,tsx,mdx}',
     './components/**/*.{js,ts,jsx,tsx,mdx}',
+    './app/**/*.{js,ts,jsx,tsx,mdx}',
+    './src/**/*.{js,ts,jsx,tsx,mdx}',
   ],
   theme: {
     extend: {
-      fontFamily: {
-        sans: ['var(--font-inter)'],
-        display: ['var(--font-orbitron)'],
-        cyber: ['var(--font-space-grotesk)'],
-      },
       colors: {
-        'cyber-dark': '#000000',
-        'cyber-blue': '#0ea5e9',
-        'cyber-purple': '#a855f7',
-        'cyber-pink': '#ec4899',
+        'cyber-dark': '#070723',
+        'cyber-dark-800': '#0c0c2a',
+        'cyber-dark-900': '#06061a',
+        'cyber-primary': {
+          DEFAULT: '#ec4899',
+          400: '#f472b6',
+        },
+        'cyber-secondary': '#38bdf8',
+        'cyber-accent': '#6366f1',
+        'cyber-success': '#22c55e',
+        'cyber-danger': '#ef4444',
+        'cyber-warning': '#f97316',
       },
-      boxShadow: {
-        'neon-blue': '0 0 20px rgba(14, 165, 233, 0.5)',
-        'neon-pink': '0 0 20px rgba(236, 72, 153, 0.5)',
+      fontFamily: {
+        'cyber': ['var(--font-orbitron)', 'sans-serif'],
+        'sans': ['var(--font-inter)', 'sans-serif'],
+        'heading': ['var(--font-space-grotesk)', 'sans-serif'],
       },
       backgroundImage: {
-        'gradient-cyber': 'radial-gradient(circle at center, rgba(236, 72, 153, 0.15) 0%, rgba(0, 0, 0, 0) 70%)',
+        'gradient-cyber': 'radial-gradient(circle at top right, rgba(236, 72, 153, 0.3), rgba(99, 102, 241, 0.3), rgba(0, 0, 0, 0))',
       },
     },
   },
   plugins: [],
-}; 
+};
