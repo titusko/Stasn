@@ -1,19 +1,21 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { ethers } from 'ethers';
-import { TaskPlatformAbi } from 'contracts-sdk';
+import { TASK_PLATFORM_ADDRESS, TASK_TOKEN_ADDRESS, TaskPlatformABI, TaskTokenABI } from 'contracts-sdk';
 
 interface Web3ContextType {
-  provider: ethers.providers.Web3Provider | null;
+  provider: ethers.BrowserProvider | null;
   signer: ethers.Signer | null;
   account: string | null;
   chainId: number | null;
   taskContract: ethers.Contract | null;
+  tokenContract: ethers.Contract | null;
   isConnected: boolean;
   connect: () => Promise<void>;
   disconnect: () => void;
   isCorrectNetwork: boolean;
   switchNetwork: () => Promise<void>;
+  loading: boolean;
 }
 
 const Web3Context = createContext<Web3ContextType>({
@@ -22,11 +24,13 @@ const Web3Context = createContext<Web3ContextType>({
   account: null,
   chainId: null,
   taskContract: null,
+  tokenContract: null,
   isConnected: false,
   connect: async () => {},
   disconnect: () => {},
   isCorrectNetwork: false,
   switchNetwork: async () => {},
+  loading: false,
 });
 
 export const useWeb3 = () => useContext(Web3Context);
@@ -35,166 +39,183 @@ interface Web3ProviderProps {
   children: ReactNode;
 }
 
-export const Web3Provider = ({ children }: Web3ProviderProps) => {
-  const [provider, setProvider] = useState<ethers.providers.Web3Provider | null>(null);
+export const Web3Provider: React.FC<Web3ProviderProps> = ({ children }) => {
+  const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
   const [signer, setSigner] = useState<ethers.Signer | null>(null);
   const [account, setAccount] = useState<string | null>(null);
   const [chainId, setChainId] = useState<number | null>(null);
   const [taskContract, setTaskContract] = useState<ethers.Contract | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const [isCorrectNetwork, setIsCorrectNetwork] = useState(false);
+  const [tokenContract, setTokenContract] = useState<ethers.Contract | null>(null);
+  const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [isCorrectNetwork, setIsCorrectNetwork] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
 
-  // Contract address - would come from environment in production
-  const contractAddress = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || '0x123...'; // Replace with actual contract address
-  const requiredChainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID || '80001'); // Polygon Mumbai by default
+  // Expected network ID (Hardhat = 31337, Mumbai = 80001, etc.)
+  const expectedChainId = 31337;
 
-  useEffect(() => {
-    // Check if we have a stored connection
-    if (typeof window !== 'undefined') {
-      const storedAccount = localStorage.getItem('connectedAccount');
-      if (storedAccount) {
-        connect();
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (provider && account) {
-      setUpEventListeners();
-    }
-    return () => {
-      if (window.ethereum) {
-        window.ethereum.removeAllListeners();
-      }
-    };
-  }, [provider, account]);
-
-  useEffect(() => {
-    if (chainId) {
-      setIsCorrectNetwork(chainId === requiredChainId);
-    }
-  }, [chainId, requiredChainId]);
-
-  const setUpEventListeners = () => {
-    if (window.ethereum) {
-      window.ethereum.on('accountsChanged', (accounts: string[]) => {
-        if (accounts.length === 0) {
-          disconnect();
-        } else {
-          setAccount(accounts[0]);
+  const initializeEthers = async () => {
+    if (typeof window !== 'undefined' && window.ethereum) {
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const network = await provider.getNetwork();
+        const chainId = Number(network.chainId);
+        setChainId(chainId);
+        setIsCorrectNetwork(chainId === expectedChainId);
+        setProvider(provider);
+        
+        // Check if already connected
+        const accounts = await provider.listAccounts();
+        if (accounts.length > 0) {
+          const signer = await provider.getSigner();
+          setSigner(signer);
+          setAccount(await signer.getAddress());
+          
+          // Initialize contracts
+          const taskContract = new ethers.Contract(
+            TASK_PLATFORM_ADDRESS,
+            TaskPlatformABI,
+            signer
+          );
+          
+          const tokenContract = new ethers.Contract(
+            TASK_TOKEN_ADDRESS,
+            TaskTokenABI,
+            signer
+          );
+          
+          setTaskContract(taskContract);
+          setTokenContract(tokenContract);
+          setIsConnected(true);
         }
-      });
-
-      window.ethereum.on('chainChanged', (chainIdHex: string) => {
-        const newChainId = parseInt(chainIdHex, 16);
-        setChainId(newChainId);
-        window.location.reload();
-      });
-
-      window.ethereum.on('disconnect', () => {
-        disconnect();
-      });
+      } catch (error) {
+        console.error("Failed to initialize ethers:", error);
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      setLoading(false);
     }
   };
 
-  const connect = async () => {
-    if (typeof window !== 'undefined' && window.ethereum) {
-      try {
-        // Request account access
-        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        const ethProvider = new ethers.providers.Web3Provider(window.ethereum);
-        const ethSigner = ethProvider.getSigner();
-        const address = accounts[0];
-        const network = await ethProvider.getNetwork();
-        
-        // Create contract instance
-        const contract = new ethers.Contract(
-          contractAddress,
-          TaskPlatformAbi,
-          ethSigner
-        );
-        
-        setProvider(ethProvider);
-        setSigner(ethSigner);
-        setAccount(address);
-        setChainId(network.chainId);
-        setTaskContract(contract);
-        setIsConnected(true);
-        
-        // Store connection
-        localStorage.setItem('connectedAccount', address);
-      } catch (error) {
-        console.error('Error connecting to MetaMask', error);
+  useEffect(() => {
+    initializeEthers();
+    
+    // Set up event listeners
+    if (window.ethereum) {
+      window.ethereum.on('accountsChanged', (accounts: string[]) => {
+        if (accounts.length === 0) {
+          // User disconnected
+          disconnect();
+        } else {
+          // Account changed
+          initializeEthers();
+        }
+      });
+      
+      window.ethereum.on('chainChanged', () => {
+        // Chain changed, refresh
+        window.location.reload();
+      });
+    }
+    
+    return () => {
+      // Clean up listeners
+      if (window.ethereum) {
+        window.ethereum.removeAllListeners('accountsChanged');
+        window.ethereum.removeAllListeners('chainChanged');
       }
-    } else {
-      console.log('No Ethereum browser extension detected');
+    };
+  }, []);
+
+  const connect = async () => {
+    if (!provider) return;
+    
+    try {
+      setLoading(true);
+      await provider.send('eth_requestAccounts', []);
+      const signer = await provider.getSigner();
+      setSigner(signer);
+      
+      const address = await signer.getAddress();
+      setAccount(address);
+      
+      // Initialize contracts with signer
+      const taskContract = new ethers.Contract(
+        TASK_PLATFORM_ADDRESS,
+        TaskPlatformABI,
+        signer
+      );
+      
+      const tokenContract = new ethers.Contract(
+        TASK_TOKEN_ADDRESS,
+        TaskTokenABI,
+        signer
+      );
+      
+      setTaskContract(taskContract);
+      setTokenContract(tokenContract);
+      setIsConnected(true);
+    } catch (error) {
+      console.error("Failed to connect:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const disconnect = () => {
-    setProvider(null);
     setSigner(null);
     setAccount(null);
-    setChainId(null);
     setTaskContract(null);
+    setTokenContract(null);
     setIsConnected(false);
-    localStorage.removeItem('connectedAccount');
   };
 
   const switchNetwork = async () => {
-    if (!window.ethereum) return;
+    if (!provider) return;
     
     try {
-      // Try to switch to the network
       await window.ethereum.request({
         method: 'wallet_switchEthereumChain',
-        params: [{ chainId: `0x${requiredChainId.toString(16)}` }],
+        params: [{ chainId: `0x${expectedChainId.toString(16)}` }],
       });
     } catch (error: any) {
-      // If the chain is not added to MetaMask
+      // This error code means the chain has not been added to MetaMask
       if (error.code === 4902) {
-        try {
-          await window.ethereum.request({
-            method: 'wallet_addEthereumChain',
-            params: [
-              {
-                chainId: `0x${requiredChainId.toString(16)}`,
-                chainName: 'Polygon Mumbai',
-                nativeCurrency: {
-                  name: 'MATIC',
-                  symbol: 'MATIC',
-                  decimals: 18,
-                },
-                rpcUrls: ['https://rpc-mumbai.maticvigil.com/'],
-                blockExplorerUrls: ['https://mumbai.polygonscan.com/'],
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [
+            {
+              chainId: `0x${expectedChainId.toString(16)}`,
+              chainName: 'Local Hardhat Network',
+              nativeCurrency: {
+                name: 'Ethereum',
+                symbol: 'ETH',
+                decimals: 18,
               },
-            ],
-          });
-        } catch (addError) {
-          console.error('Error adding the network to MetaMask', addError);
-        }
+              rpcUrls: ['http://127.0.0.1:8545'],
+            },
+          ],
+        });
       } else {
-        console.error('Error switching network', error);
+        console.error("Failed to switch network:", error);
       }
     }
   };
 
-  const contextValue: Web3ContextType = {
+  const value = {
     provider,
     signer,
     account,
     chainId,
     taskContract,
+    tokenContract,
     isConnected,
     connect,
     disconnect,
     isCorrectNetwork,
     switchNetwork,
+    loading,
   };
 
-  return (
-    <Web3Context.Provider value={contextValue}>
-      {children}
-    </Web3Context.Provider>
-  );
+  return <Web3Context.Provider value={value}>{children}</Web3Context.Provider>;
 };
