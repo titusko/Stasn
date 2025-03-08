@@ -1,170 +1,281 @@
 
 import React, { useState } from 'react';
 import { useWeb3 } from '../contexts/Web3Context';
-import { createIPFSService } from 'ipfs';
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogFooter, 
-  DialogHeader, 
-  DialogTitle 
-} from './ui/dialog';
-import { Button } from './ui/button';
-import { 
-  AlertCircle, 
-  FileIcon, 
-  Upload 
-} from 'lucide-react';
-import { Alert, AlertDescription } from './ui/alert';
+import { uploadFileToIPFS, uploadJSONToIPFS } from '../../../packages/ipfs';
+import { ethers } from 'ethers';
 
 interface TaskSubmitModalProps {
-  taskId: number;
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess?: (taskId: string, ipfsHash: string) => void;
 }
 
-export const TaskSubmitModal: React.FC<TaskSubmitModalProps> = ({
-  taskId,
-  isOpen,
-  onClose,
-  onSuccess,
-}) => {
-  const { taskContract } = useWeb3();
+export function TaskSubmitModal({ isOpen, onClose, onSuccess }: TaskSubmitModalProps) {
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [reward, setReward] = useState('');
+  const [category, setCategory] = useState('');
+  const [tags, setTags] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [comments, setComments] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const ipfsService = createIPFSService();
+  
+  const { address, taskPlatformContract, tokenContract } = useWeb3();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] || null;
-    setSelectedFile(file);
+    if (e.target.files && e.target.files[0]) {
+      setSelectedFile(e.target.files[0]);
+    }
+  };
+
+  const handleTagsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setTags(e.target.value);
+  };
+
+  const parseTagsArray = (): string[] => {
+    return tags
+      .split(',')
+      .map(tag => tag.trim())
+      .filter(tag => tag.length > 0);
+  };
+
+  const resetForm = () => {
+    setTitle('');
+    setDescription('');
+    setReward('');
+    setCategory('');
+    setTags('');
+    setSelectedFile(null);
+    setError(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!taskContract) {
-      setError('Wallet not connected');
+    if (!address) {
+      setError('Please connect your wallet first');
       return;
     }
     
-    if (!selectedFile) {
-      setError('Please select a file to upload');
+    if (!taskPlatformContract || !tokenContract) {
+      setError('Contracts not initialized');
+      return;
+    }
+    
+    if (!title || !description || !reward) {
+      setError('Please fill in all required fields');
       return;
     }
     
     try {
-      setError(null);
       setIsUploading(true);
+      setError(null);
       
-      // Upload file to IPFS
-      const fileHash = await ipfsService.uploadFile(selectedFile);
+      // Upload file to IPFS if selected
+      let attachmentIpfsHash = '';
       
-      // Upload metadata with file hash and comments
-      const metadataHash = await ipfsService.uploadJSON({
-        fileHash,
-        fileName: selectedFile.name,
-        fileType: selectedFile.type,
-        fileSize: selectedFile.size,
-        comments,
+      if (selectedFile) {
+        const fileResult = await uploadFileToIPFS(
+          selectedFile,
+          selectedFile.name,
+          { description, category }
+        );
+        attachmentIpfsHash = fileResult.IpfsHash;
+      }
+      
+      // Create task metadata
+      const taskMetadata = {
+        title,
+        description,
+        category: category || 'Uncategorized',
+        tags: parseTagsArray(),
+        attachment: attachmentIpfsHash,
         timestamp: new Date().toISOString(),
-      });
+        creator: address,
+      };
+      
+      // Upload metadata to IPFS
+      const metadataResult = await uploadJSONToIPFS(
+        taskMetadata,
+        `Task: ${title}`,
+        { type: 'task-metadata' }
+      );
       
       setIsUploading(false);
       setIsSubmitting(true);
       
-      // Submit the task with the metadata hash
-      const tx = await taskContract.completeTask(taskId, metadataHash);
-      await tx.wait();
+      // Convert reward from ETH to wei
+      const rewardInWei = ethers.parseEther(reward);
       
-      onSuccess();
+      // Approve token transfer
+      const approveTx = await tokenContract.approve(
+        await taskPlatformContract.getAddress(),
+        rewardInWei
+      );
+      await approveTx.wait();
+      
+      // Create task on blockchain
+      const createTaskTx = await taskPlatformContract.createTask(
+        title,
+        description,
+        rewardInWei,
+        category || 'Uncategorized',
+        parseTagsArray(),
+        metadataResult.IpfsHash
+      );
+      
+      const receipt = await createTaskTx.wait();
+      
+      // Extract task ID from event logs
+      const taskCreatedEvent = receipt.logs.find(
+        (log: any) => log.eventName === 'TaskCreated'
+      );
+      
+      const taskId = taskCreatedEvent ? taskCreatedEvent.args.taskId.toString() : '0';
+      
+      console.log(`Task created with ID: ${taskId}`);
+      
+      // Call success callback
+      if (onSuccess) {
+        onSuccess(taskId, metadataResult.IpfsHash);
+      }
+      
+      // Reset form and close modal
+      resetForm();
       onClose();
-    } catch (error: any) {
-      console.error('Error submitting task:', error);
-      setError(error.message || 'Failed to submit task');
+    } catch (err: any) {
+      console.error('Error creating task:', err);
+      setError(err.message || 'Failed to create task');
     } finally {
       setIsUploading(false);
       setIsSubmitting(false);
     }
   };
 
+  if (!isOpen) return null;
+
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>Submit Task Completion</DialogTitle>
-        </DialogHeader>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+      <div className="w-full max-w-md bg-white rounded-lg p-6 relative">
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 text-gray-500 hover:text-gray-700"
+        >
+          ✕
+        </button>
+        
+        <h2 className="text-xl font-bold mb-4">Create New Task</h2>
         
         <form onSubmit={handleSubmit}>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Comments</label>
-              <textarea 
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-                value={comments}
-                onChange={(e) => setComments(e.target.value)}
-                rows={4}
-                placeholder="Add any additional information about your submission..."
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Title *
+              </label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                required
               />
             </div>
             
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Submission File</label>
-              <div className="flex flex-col gap-2">
-                <input
-                  id="file-upload"
-                  type="file"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => document.getElementById('file-upload')?.click()}
-                  className="flex gap-2 items-center"
-                >
-                  <Upload size={16} />
-                  Choose File
-                </Button>
-                {selectedFile && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <FileIcon size={16} />
-                    {selectedFile.name}
-                  </div>
-                )}
-              </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Description *
+              </label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                rows={4}
+                required
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Reward (ETH) *
+              </label>
+              <input
+                type="number"
+                step="0.001"
+                value={reward}
+                onChange={(e) => setReward(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                required
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Category
+              </label>
+              <input
+                type="text"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Tags (comma separated)
+              </label>
+              <input
+                type="text"
+                value={tags}
+                onChange={handleTagsChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                placeholder="e.g. urgent, design, frontend"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Attachment
+              </label>
+              <input
+                type="file"
+                onChange={handleFileChange}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              />
+              {selectedFile && (
+                <div className="text-sm mt-1 text-gray-500">
+                  Selected file: {selectedFile.name}
+                </div>
+              )}
             </div>
             
             {error && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
+              <div className="text-red-500 text-sm">{error}</div>
             )}
+            
+            <div className="flex justify-end pt-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md mr-2"
+                disabled={isUploading || isSubmitting}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isUploading || isSubmitting}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md disabled:bg-blue-400"
+              >
+                {isUploading ? 'Uploading...' : isSubmitting ? 'Creating...' : 'Create Task'}
+              </button>
+            </div>
           </div>
-          
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              disabled={isUploading || isSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={isUploading || isSubmitting || !selectedFile}
-            >
-              {isUploading ? 'Uploading...' : isSubmitting ? 'Submitting...' : 'Submit Task'}
-            </Button>
-          </DialogFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
-};
+}
+
+export default TaskSubmitModal;
