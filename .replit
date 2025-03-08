@@ -52,4 +52,5 @@ externalPort = 80
 channel = "stable-24_05"
 
 [deployment]
-run = ["sh", "-c", "npm run dev"]
+run = ["sh", "-c", "cd apps/web && pnpm start"]
+build = ["sh", "-c", "pnpm install && pnpm run build"]
