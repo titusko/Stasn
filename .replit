@@ -2,7 +2,7 @@ modules = ["nodejs-20", "bash"]
 run = "npm run dev"
 
 [workflows]
-runButton = "NextJS Dev"
+runButton = "Start Development"
 
 [[workflows.workflow]]
 name = "Next.js"
@@ -27,6 +27,22 @@ author = 40254818
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "npm run dev"
+
+[[workflows.workflow]]
+name = "Start Development"
+author = 39266214
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "node scripts/dev.js"
+
+[[workflows.workflow]]
+name = "Start Development"
+author = 39266214
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "node scripts/dev.js"
 
 [[ports]]
 localPort = 3000
